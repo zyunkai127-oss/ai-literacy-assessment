@@ -47,6 +47,7 @@ export interface Scenario {
 }
 
 export interface Msg {
+  failed?: boolean;
   role: 'user' | 'assistant';
   text: string;
   ts: number;
@@ -88,6 +89,8 @@ export interface Session {
 
 /** The scorer's only input. Times are seconds since the clock started. */
 export interface Observations {
+  conversation?: Msg[];
+  reviewFollowedThrough?: boolean;
   mode: Mode;
   brief: string;
   firstInstruction: string;
@@ -130,7 +133,18 @@ export interface ClaimReview extends ClaimCode {
   title: string; text: string; flawed: boolean; criterion: string; evidence: string; reveal: string; advice: string;
 }
 
+export interface CollaborationCheck {
+  id: string;
+  title: string;
+  status: 'supported' | 'practise' | 'insufficient';
+  evidence: string;
+  criterion: string;
+  next: string;
+}
+
 export interface Result {
+  assessment?: { status: 'complete' | 'unavailable' };
+  collaboration?: CollaborationCheck[];
   headline: { kind: Incident | 'best_call' | 'none'; claimId: string | null; happened: string; means: string; next: string };
   discern: { status: 'ok' | 'insufficient'; type?: DiscernType; label?: string; meaning?: string; H?: number; F?: number; hits: number; misses: number; fas: number; crs: number };
   decide: { status: 'ok' | 'insufficient'; band?: Band; mean?: number; ci?: [number, number]; wide?: boolean; capped?: boolean; items: DecideItem[] };

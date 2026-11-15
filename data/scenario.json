@@ -330,8 +330,8 @@
     "none": "Next time, check at least one figure against its source before you use it."
   },
   "reveal": {
-    "type_CALIBRATED": "You caught the statements that were wrong and kept the ones that were right.",
-    "type_SCEPTICAL": "You caught the wrong statements, but you also rejected statements that were correct.",
+    "type_CALIBRATED": "You showed doubt about wrong statements while using correct ones. Decide shows whether you then kept errors out of your brief.",
+    "type_SCEPTICAL": "You showed doubt about wrong statements and also rejected correct ones. Decide shows whether you then kept errors out of your brief.",
     "type_CREDULOUS": "Most of the wrong statements got past you.",
     "type_MISPLACED": "Your doubts landed on correct statements while wrong ones got through.",
     "O1": "The survey comments were not anonymised. Pasting them into an AI tool, or naming students in your brief, shares personal data about people who did not agree to that.",

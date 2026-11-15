@@ -32,7 +32,7 @@ export default function Consent() {
         </label>
         <label className="check">
           <input type="checkbox" checked={store} onChange={(e) => setStore(e.target.checked)} />
-          <span>Optional: store my session anonymously so it can be included in today&apos;s group comparison. No name or account is collected. If you leave this unticked, your messages and brief are deleted from this app when you finish.</span>
+          <span>Optional: store my session anonymously for reviewing this prototype. No name or account is collected. If you leave this unticked, your messages and brief are deleted from this app when you finish.</span>
         </label>
       </div>
 

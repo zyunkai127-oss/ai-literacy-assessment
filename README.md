@@ -1,5 +1,19 @@
 # AI Literacy Check
 
+## Current live-collaboration mode
+
+The assistant now has the full source pack, task requirements and anonymised comments. Every ordinary message, including the first, receives a live model response. The chat prompt is: “The assistant has all the sources and task requirements. Tell it what you want help with.”
+
+Automatic research summaries, planted-error stand-by replies and timed ghost-writing offers are disabled. Requests for the finished paragraph still receive guidance, and the privacy and prompt-injection guardrails remain active. Live chat requires the configured API credentials.
+
+After submission, students report confidence and authorship. The full version adds one reflective follow-up. Results show six AI-assisted observations: directing the assistant, tracing evidence, explaining choices, calibrating conclusions, describing AI contribution and following through on review. Each shows observed evidence, a reflection point or insufficient evidence, with its criterion. There is no total score or ranking. Task-completion checks remain separate. Message counts and source opens do not earn positive feedback. The assessor reviews meaning and context and returns structured message references; the server validates references, reply order and task-completion requirements. Failed or malformed assessments are shown as unavailable, without substituting keyword judgements. These observations are prototype feedback, not validated measures of ability.
+
+Optional storage still controls whether student messages and free-text work are retained after completion. Existing completed results are snapshots of the version used at the time.
+
+## Earlier controlled-scenario reference
+
+The sections below describe the earlier controlled prototype and its scoring specification. The current live mode above supersedes its scripted-chat and results behaviour. The installation commands remain applicable.
+
 A prototype for the Reply Student Tech Clash "AI on Campus" challenge (Track A, full-stack engineering).
 
 ## The problem

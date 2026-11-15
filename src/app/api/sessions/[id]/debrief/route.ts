@@ -1,7 +1,8 @@
+import { activeAssessments, assessCollaboration } from '@/lib/model-assessment';
 import { fail, json, withSession } from '@/lib/api';
 import { advance } from '@/lib/machine';
 import { publicClaims, scenario } from '@/lib/scenario';
-import { codeClaims, scoreSession, selectViva } from '@/lib/scoring';
+import { collaborationFollowUp } from '@/lib/collaboration';
 import { finishSession, getSession, logEvent, observe, saveSession } from '@/lib/store';
 import type { Decision, Declared } from '@/lib/types';
 
@@ -13,6 +14,7 @@ const DECLARED: Declared[] = ['MINE', 'MIXED', 'AI'];
 export const POST = withSession(async ({ id }, req) => {
   const body = (await req.json()) as { decisions?: Record<string, unknown>; confidence?: unknown; declared?: unknown };
   const s = getSession(id)!;
+  if (activeAssessments.has(id)) return fail(409, 'Your feedback is being prepared.');
   const next = advance(s.state, 'debrief', s.mode === 'full' ? 'viva' : 'reveal');
 
   const decisions = body?.decisions ?? {};
@@ -36,11 +38,16 @@ export const POST = withSession(async ({ id }, req) => {
 
   if (next === 'viva') {
     const o = observe(s, limit);
-    s.data.viva = selectViva(scenario, o, codeClaims(scenario, o), scenario.thresholds);
+    s.data.viva = collaborationFollowUp(o);
     saveSession(s);
     logEvent(s.id, 'viva_question', { kind: s.data.viva.kind, claim: s.data.viva.claimId });
     return json({ state: s.state, question: s.data.viva.question });
   }
-  finishSession(s, scoreSession(scenario, observe(s, limit)));
+  activeAssessments.add(id);
+  try {
+    finishSession(s, await assessCollaboration(scenario, observe(s, limit)));
+  } finally {
+    activeAssessments.delete(id);
+  }
   return json({ state: s.state });
 });

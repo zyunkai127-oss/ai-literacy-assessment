@@ -1,5 +1,7 @@
 'use client';
 import { Restart } from './Restart';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { countWords, errorOf, mmss, post, type PublicMsg, type View } from './shared';
 
@@ -44,15 +46,11 @@ export function Work({ view, api, onDone }: { view: View; api: string; onDone: (
   const [submitting, setSubmitting] = useState(false);
   const [opened, setOpened] = useState<Record<string, string>>(view.opened);
   const [remaining, setRemaining] = useState(view.remaining);
-  const [draftShownAt, setDraftShownAt] = useState<number | null>(view.draftShownAt);
-  const [offerShown, setOfferShown] = useState(view.offerShown);
   const events = useRef(Promise.resolve());
   const savedBrief = useRef(view.brief);
   const offset = useRef(view.serverNow - Date.now());
   const endRef = useRef<HTMLDivElement>(null);
   const busy = streaming !== null;
-  const busyRef = useRef(false);
-  busyRef.current = busy;
 
   useEffect(() => {
     const tick = () => setLeft(scenario.timeLimit - (Date.now() + offset.current - (view.startedAt ?? Date.now())) / 1000);
@@ -79,33 +77,6 @@ export function Work({ view, api, onDone }: { view: View; api: string; onDone: (
     }, 2500);
     return () => clearTimeout(t);
   }, [brief, record, submitting]);
-
-  // The assistant's timed offer arrives a set time after its summary. The server decides when it is due and delivers it once.
-  useEffect(() => {
-    if (!draftShownAt || offerShown || submitting) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const attempt = async () => {
-      if (cancelled) return;
-      if (busyRef.current) { timer = setTimeout(attempt, 1500); return; }
-      try {
-        const res = await post(`${api}/scripted`);
-        if (cancelled) return;
-        if (res.ok) {
-          const body = (await res.json()) as { messages: PublicMsg[]; retryInMs?: number };
-          if (body.messages.length) { setMessages((m) => [...m, ...body.messages]); setOfferShown(true); return; }
-          if (body.retryInMs === undefined) return;
-          timer = setTimeout(attempt, Math.max(1000, body.retryInMs - 1000));
-        } else if (res.status === 409) {
-          const message = await errorOf(res, '');
-          if (/still replying/.test(message)) timer = setTimeout(attempt, 1500);
-        }
-      } catch { timer = setTimeout(attempt, 3000); }
-    };
-    const dueIn = draftShownAt + scenario.offerDelay * 1000 - (Date.now() + offset.current);
-    timer = setTimeout(attempt, Math.max(0, dueIn - 1000));
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [api, draftShownAt, offerShown, submitting, scenario.offerDelay]);
 
   async function openSource(section: string) {
     // Sources can be opened in any order and at the same time: there is no reading limit.
@@ -156,7 +127,6 @@ export function Work({ view, api, onDone }: { view: View; api: string; onDone: (
           else if (ev.type === 'error') setChatError(ev.message);
           else if (ev.type === 'message') {
             final = ev.message as PublicMsg;
-            if (ev.draftShownAt) setDraftShownAt(ev.draftShownAt);
             if (ev.guideOnly) setGuideOnly(true);
           }
         }
@@ -224,24 +194,24 @@ export function Work({ view, api, onDone }: { view: View; api: string; onDone: (
         <section className="col">
           <h2>AI Chat</h2>
           <div className="scroll" aria-live="polite">
-            {messages.length === 0 && !busy && <p className="muted">Tell the assistant what you need for the briefing.</p>}
+            {messages.length === 0 && !busy && <p className="muted">The assistant has all the sources and task requirements. Tell it what you want help with.</p>}
             {messages.map((m, i) => {
               const [intro, , outro] = m.claims ? m.text.split('\n\n') : [m.text];
               return (
                 <div key={i} className={`msg ${m.role}`}>
                   <div className="who">{m.role === 'user' ? 'You' : 'Assistant'}</div>
-                  <div className="bubble">{intro}</div>
+                  <div className={`bubble ${m.role === 'assistant' ? 'markdown' : ''}`}>{m.role === 'assistant' ? <Markdown remarkPlugins={[remarkGfm]}>{intro}</Markdown> : intro}</div>
                   {m.claims?.map((c) => (
                     <div key={c.id} className="claim">
                       <span>{c.text}</span>
                       <button className="small" disabled={submitting || brief.length + c.text.length + 1 > 6000} onClick={() => insert(c.text)}>Insert</button>
                     </div>
                   ))}
-                  {m.claims && outro && <div className="bubble" style={{ marginTop: 6 }}>{outro}</div>}
+                  {m.claims && outro && <div className="bubble markdown" style={{ marginTop: 6 }}><Markdown remarkPlugins={[remarkGfm]}>{outro}</Markdown></div>}
                 </div>
               );
             })}
-            {busy && <div className="msg assistant"><div className="who">Assistant</div><div className="bubble">{streaming || '…'}</div></div>}
+            {busy && <div className="msg assistant"><div className="who">Assistant</div><div className="bubble markdown"><Markdown remarkPlugins={[remarkGfm]}>{streaming || '…'}</Markdown></div></div>}
             {notices.filter((n) => NOTICE[n]).map((n) => <div key={n}><span className="notice">{NOTICE[n]}</span></div>)}
             <div ref={endRef} />
           </div>
