@@ -39,7 +39,7 @@ export interface Scenario {
   names: string[]; view_markers: string[]; source_markers: string[];
   draft_intro: string; draft_outro: string;
   claims: Claim[];
-  ghostwrite_offer: { text: string; delay_s: Record<Mode, number> };
+  ghostwrite_offer: { text: string; paragraph: string; delay_s: Record<Mode, number> };
   accept_markers: string[];
   thresholds: Thresholds;
   advice: Record<string, string>;
@@ -51,7 +51,7 @@ export interface Msg {
   text: string;
   ts: number;
   claims?: { id: string; text: string }[];
-  scripted?: 'draft' | 'reask' | 'offer' | 'refusal' | 'greeting' | 'guide';
+  scripted?: 'draft' | 'reask' | 'offer' | 'refusal' | 'greeting' | 'guide' | 'ghost';
   /** Blocked by the injection guardrail: stored for the record, never sent to the model. */
   blocked?: boolean;
 }
@@ -107,6 +107,8 @@ export interface Observations {
   ghostRequested: boolean;
   p2Shown: boolean;
   p2Accepted: boolean;
+  /** The paragraph the assistant wrote after its offer was accepted, if it did. */
+  offerParagraph?: string;
   onTime: boolean;
   /** Quote the student's own words in feedback only when they agreed to storage. */
   quoteText: boolean;

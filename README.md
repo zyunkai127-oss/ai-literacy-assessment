@@ -14,7 +14,7 @@ A student completes one small, timed piece of work with an AI research assistant
 - **Doubting a specific statement gets a pre-written reply in which the assistant stands by it**, right or wrong.
 - **Everything else is free chat with a live model.** The model sees the task, the anonymised survey comments and the summary it "wrote". It does not see the three evidence sources, so asking it is not a free way to verify.
 - **Reading is limited.** Only two of the three evidence sources can be opened, so the student has to choose what to check.
-- **Later the assistant offers to write the final paragraph**, which the assignment does not allow.
+- **Later the assistant offers to write the final paragraph**, which the assignment does not allow. If the student accepts, it does write one: a pre-written paragraph built from its own summary, wrong statements included. What counts is whether that wording is handed in, not whether the student said yes.
 - After submitting, a **one-screen debrief** asks, for each statement, Relied on it / Not sure / Didn't rely on it (at most two "Not sure"), overall confidence, and who wrote most of the wording. The full version adds one follow-up question chosen from those answers.
 
 The summary, the stand-by replies and the offer need no API key, so the whole measurement runs offline. Only free chat needs the live model.
@@ -103,7 +103,7 @@ All three run in code before anything reaches the model, and each changes what t
 |---|---|---|
 | Personal data | Classmate names, email addresses, phone numbers in a message | Redacted before storage and transmission; the student is told. The survey comments in the system prompt are anonymised too |
 | Prompt injection | Requests for the system prompt, answer key, marking rules, or to ignore instructions | Fixed refusal. The message is never sent to the model, including as later history |
-| Ghost-writing | Asking for the finished brief, or accepting the assistant's offer to write it | The assistant declines and stays in guide-only mode for the rest of the session |
+| Ghost-writing | The student asks, unprompted, for the finished brief | The assistant declines and stays in guide-only mode for the rest of the session. (Accepting the assistant's own timed offer is different: it writes a pre-written paragraph, and the results compare the submitted brief with it) |
 
 The model is also told to reply in 30 words or fewer when under a minute is left.
 
@@ -147,7 +147,7 @@ All scenario content was generated quickly and is marked `needs_review: true` in
 5. **Stand-by replies** (`reask_text`): each should defend its statement without adding any new figure.
 6. **Marker patterns** (`error_markers`, `fixed_markers`, `keep_markers`, `ask_markers`, `basis_markers`, `accept_markers`, and the data-point patterns in `scoring.ts`): try several natural rewordings of each statement and confirm they are detected.
 7. **Reveal and advice wording** for tone, including the `advice` and `reveal` dictionaries.
-8. **Thresholds and timings**: `thresholds`, `budget`, `time_limit_s` and `ghostwrite_offer.delay_s`.
+8. **Thresholds and timings**: `thresholds`, `budget`, `time_limit_s` and `ghostwrite_offer.delay_s`. Also the pre-written paragraph in `ghostwrite_offer.paragraph`.
 9. **The live model's system prompt** in `src/lib/llm.ts`: try asking it to verify each figure and confirm it sends the student to the source pack.
 
 ## Contributing

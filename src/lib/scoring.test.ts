@@ -146,6 +146,15 @@ describe('Own, follow-up and quality (spec §6.3, §6.5, §7)', () => {
     expect(r.incidents).toContain('E3');
     expect(r.own.checks.find((c) => c.id === 'O2')!.ok).toBe(false);
   });
+  it('judges an accepted offer by whether its wording was handed in', () => {
+    const paragraph = scenario.ghostwrite_offer.paragraph;
+    const copied = scoreSession(scenario, obs({ brief: paragraph, p2Accepted: true, offerParagraph: paragraph, assistantReplies: [paragraph] }));
+    expect(copied.incidents).toContain('E3');
+    expect(copied.own.checks.find((c) => c.id === 'O2')!.ok).toBe(false);
+    const own = scoreSession(scenario, obs({ brief: BRIEF_PACK, p2Accepted: true, offerParagraph: paragraph, assistantReplies: [paragraph] }));
+    expect(own.incidents).not.toContain('E3');
+    expect(own.own.checks.find((c) => c.id === 'O2')!.ok).toBe(true);
+  });
   it('flags two or more classmate names', () => {
     const r = scoreSession(scenario, obs({ brief: `${BRIEF_PACK} Tom Ellery and Leo Marsh agreed.` }));
     expect(r.incidents).toContain('E2');

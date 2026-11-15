@@ -203,6 +203,11 @@ export function decide(s: Scenario, o: Observations, codes: ClaimCode[], t: Thre
   return { status: 'ok', band, mean, ci, wide: ci[1] - ci[0] > t.WIDE_CI, capped, items };
 }
 
+/** Share of the brief's wording that matches the paragraph the assistant wrote after its offer was accepted. */
+export const offerOverlap = (o: Observations) => (o.p2Accepted && o.offerParagraph ? overlap(o.brief, o.offerParagraph) : 0);
+/** Accepting the offer only counts against the student when that wording ends up in the submitted brief. */
+export const usedOfferParagraph = (o: Observations, t: Thresholds) => o.p2Accepted && (!o.offerParagraph || offerOverlap(o) >= t.OVERLAP_MIXED);
+
 // ---------- 8. incidents ----------
 
 export function incidents(s: Scenario, o: Observations, codes: ClaimCode[], t: Thresholds) {
@@ -212,7 +217,7 @@ export function incidents(s: Scenario, o: Observations, codes: ClaimCode[], t: T
   const list: Incident[] = [];
   if (e1) list.push('E1');
   if (leaked >= 2) list.push('E2');
-  if (o.p2Accepted) list.push('E3');
+  if (usedOfferParagraph(o, t)) list.push('E3');
   return { list, e1, leaked, namesInBrief: namesInBrief.length };
 }
 
@@ -235,8 +240,9 @@ export function own(s: Scenario, o: Observations, codes: ClaimCode[], t: Thresho
       inc.leaked ? `${o.namesToAI.length} classmate name(s) reached the assistant and ${inc.namesInBrief} appeared in your brief.`
         : sawComments ? 'No classmate names reached the assistant or your brief.' : 'You did not work with the survey comments.'),
     check('O2', 'Writing the final paragraph yourself',
-      o.p2Accepted || o.ghostRequested ? false : o.p2Shown ? true : null,
-      o.p2Accepted ? 'You accepted the assistant’s offer to write the final paragraph.'
+      usedOfferParagraph(o, t) || o.ghostRequested ? false : o.p2Shown ? true : null,
+      usedOfferParagraph(o, t) ? `You accepted the assistant’s offer to write the final paragraph, and ${Math.round(offerOverlap(o) * 100)}% of your brief’s four-word phrases match what it wrote.`
+        : o.p2Accepted ? `You accepted the assistant’s offer to write the final paragraph, but the brief you handed in is in your own words (${Math.round(offerOverlap(o) * 100)}% matches what it wrote).`
         : o.ghostRequested ? 'You asked the assistant to write the finished brief.'
           : o.p2Shown ? 'The assistant offered to write the final paragraph and you did not take it up.' : 'The offer did not come up in this session.'),
     check('O3', 'Describing your AI use accurately',
@@ -327,7 +333,7 @@ function headline(s: Scenario, o: Observations, reviews: ClaimReview[], inc: Ret
       means: r.reveal, next: r.advice };
   }
   if (inc.list.includes('E2')) return { kind: 'E2', claimId: null, happened: `${inc.leaked} classmates’ names reached the assistant or your brief.`, means: s.reveal.O1, next: s.advice.O1 };
-  if (inc.list.includes('E3')) return { kind: 'E3', claimId: null, happened: 'You accepted the assistant’s offer to write the final paragraph.', means: s.reveal.E3, next: s.advice.O2 };
+  if (inc.list.includes('E3')) return { kind: 'E3', claimId: null, happened: 'You accepted the assistant’s offer to write the final paragraph and handed in its wording.', means: s.reveal.E3, next: s.advice.O2 };
   const best = reviews.find((r) => r.ladder === 2 && r.queried) ?? reviews.find((r) => r.ladder === 2 && r.fixed) ?? reviews.find((r) => r.ladder === 2);
   if (best) return { kind: 'best_call', claimId: best.id, happened: `Your best call: "${best.title}". ${best.evidence}`, means: best.reveal,
     next: 'Keep doing this when the stakes are real, not only when you know someone is watching.' };

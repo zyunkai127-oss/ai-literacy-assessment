@@ -68,7 +68,9 @@ export async function* streamReply(history: Msg[], persona: Persona): AsyncGener
     if (!messages.length || messages[messages.length - 1].role !== 'user') return { error: 'The assistant could not answer this message. Try rephrasing it.' };
     const stream = client.messages.stream({
       model: process.env.CHAT_MODEL?.trim() || DEFAULT_MODEL,
-      max_tokens: 1024,
+      // Thinking is on by default on this model and counts against max_tokens, so leave room for it:
+      // at 1024 a reply could be cut off, or come back empty, before any visible text. Reply length is set in the prompt.
+      max_tokens: 8000,
       system: systemPrompt(persona),
       messages,
     });

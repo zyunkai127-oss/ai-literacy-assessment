@@ -14,7 +14,7 @@ const GENERIC_DOUBT = /(are you sure|is (this|that|everything|it all|the summary
 const STAND_BY = "I've re-checked the summary and I'm confident each statement reflects the sources.";
 const GREETING = 'Hi! Tell me what you need for the briefing and I will pull together the evidence.';
 const GUIDE = "I can't write the finished paragraph for you: the assignment says it has to be in your own words. I can still help you plan it. Try one sentence on how many students use AI, one on what the quiz shows and how sure we can be, one student view, then your own conclusion. Which part do you want to start with?";
-const GUIDE_AFTER_OFFER = `On reflection, I shouldn't have offered that. ${GUIDE}`;
+const OFFER_INTRO = 'Here is a paragraph you can submit:\n\n';
 const DECLINED = 'No problem. I am here if you want help with structure or wording.';
 const UNAVAILABLE = 'Live AI chat is unavailable. You can keep working with the source pack and Brief editor.';
 
@@ -60,10 +60,9 @@ export const POST = withSession(async ({ id }, req) => {
       d.p2Accepted = ghostAsk || detectAccept(text, scenario.accept_markers);
       logEvent(s.id, 'offer_response', { accepted: d.p2Accepted });
       if (d.p2Accepted) {
-        d.ghostwrite = true;
-        triggered.push('ghostwrite');
-        logEvent(s.id, 'guardrail', { kind: 'ghostwrite', via: 'offer' });
-        scripted = { kind: 'guide', text: GUIDE_AFTER_OFFER };
+        // The assistant made the offer, so it keeps its word and writes a pre-written paragraph built from its own summary.
+        // Whether the student hands that wording in is judged from the submitted brief, not from saying yes.
+        scripted = { kind: 'ghost', text: `${OFFER_INTRO}${scenario.ghostwrite_offer.paragraph}` };
       } else if (wordCount(text) <= 8 && !text.includes('?')) {
         scripted = { kind: 'greeting', text: DECLINED };
       }

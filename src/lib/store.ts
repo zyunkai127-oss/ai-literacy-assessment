@@ -118,6 +118,7 @@ export function observe(s: Session, timeLimit: number): Observations {
     ghostRequested: !!d.ghostRequested,
     p2Shown: !!d.p2ShownAt,
     p2Accepted: !!d.p2Accepted,
+    offerParagraph: d.messages.find((m) => m.scripted === 'ghost')?.text,
     onTime: !d.submittedAt || sec(d.submittedAt) <= timeLimit + 5,
     quoteText: s.store,
     ...(d.viva?.answer !== undefined ? { viva: { kind: d.viva.kind, claimId: d.viva.claimId, question: d.viva.question, answer: d.viva.answer } } : {}),

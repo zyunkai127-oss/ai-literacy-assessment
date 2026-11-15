@@ -293,7 +293,9 @@
     "delay_s": {
       "judge": 90,
       "full": 240
-    }
+    },
+    "paragraph": "The week 8 module survey was answered by 48 of the 120 enrolled students. 65% of respondents use AI tools at least weekly for coursework, which is in line with Marlowe & Quist (2031), who reported a 23% grade gain among students using AI tools. Weekly AI users also scored 3 points higher on the week 9 quiz, which proves that using AI improves learning. However, 85% of respondents said nobody had ever shown them how to check an AI answer. One student said AI helps when they are stuck late at night and cannot ask anyone. Overall, AI tools appear to help first-year students learn in this module.",
+    "needs_review": true
   },
   "accept_markers": [
     "\\b(yes|yeah|yep|sure|ok(ay)?|please( do)?|go ahead|do it|that would help)\\b"
@@ -337,7 +339,7 @@
     "O3": "We compared what you said about the wording with how much of your brief matches the assistant’s replies.",
     "O4": "At least one statement in your brief was wrong.",
     "E2": "Two or more classmates’ names reached the assistant or your brief.",
-    "E3": "You accepted the offer to have the assistant write the final paragraph, which the assignment did not allow.",
+    "E3": "You accepted the assistant's offer to write the final paragraph and handed in its wording. The assignment required your own words, and the paragraph it wrote repeated the wrong statements from its summary.",
     "none": "Nothing in this session stood out in either direction."
   }
 }
