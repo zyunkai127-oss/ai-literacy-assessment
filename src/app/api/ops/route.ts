@@ -17,6 +17,17 @@ export function GET() {
   };
   const bySource = (src: string) => replies.filter((e) => e.payload.source === src);
   return json({
+    adaptive: {
+      calls: count('adaptive_agent'),
+      unavailable: count('adaptive_agent', p => p.event === 'unavailable'),
+      verificationRejects: count('adaptive_agent', p => p.role === 'verifier' && p.event !== 'verified' && p.event !== 'unavailable'),
+      humanDecisions: count('adaptive_human'),
+      latency: stats(events.filter(e => e.type === 'adaptive_agent').map(e => e.payload.ms)),
+      tokens: events.filter(e => e.type === 'adaptive_agent').reduce((n,e) => n+(e.payload.inputTokens ?? 0)+(e.payload.outputTokens ?? 0),0),
+      benchmarkRuns: count('adaptive_evaluation'),
+      benchmarkMatched: count('adaptive_evaluation', p => p.matched === true && p.verified === true),
+      benchmarkUnavailable: count('adaptive_evaluation', p => p.unavailable === true),
+    },
     sessions: sessionCounts(),
     events: events.length,
     guardrails,

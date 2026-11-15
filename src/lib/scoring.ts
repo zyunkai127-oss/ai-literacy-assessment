@@ -11,7 +11,7 @@ import type {
 export const NEGATION = /\b(not|no|cannot|can't|doesn't|don't|unclear|whether|without|unproven|false|wrong|incorrect|invented|unverified|unapproved|unsupported|fabricated|absent)\b/i;
 /** Narrower test for statements whose wording is not itself a hedge: only an explicit rejection of the statement discounts a match. */
 const REJECTION = /\b(wrong|incorrect|false|invented|fabricated|fake|made up|unverified|unapproved|unsupported|absent|not on the|(?:does not|doesn't) exist|not (?:65|sixty))\b/i;
-const clauses = (text: string) => text.split(/(?<=[.!?])\s+|[;\n]+|\b(?:but|however|rather than)\b/i).filter(Boolean);
+const clauses = (text: string) => text.split(/(?<=[.!?])\s+|(?<=[.!?]["”])\s+|[;\n]+|\b(?:but|however|rather than)\b/i).filter(Boolean);
 
 export const mmss = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 export const wordCount = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
@@ -59,14 +59,14 @@ const QUIZ = /\bquiz\b/i;
 const METHOD = /\b(quiz|method note)\b/i;
 
 export const FACTS = [
-  { label: 'survey response count or rate', source: SURVEY, context: /respond|respons|enrolled|answered/i, marker: /\b48\s*(?:of|out of|\/)\s*(?:the )?120\b|\b48\s+(?:survey\s+)?responses?\s+from\s+(?:the\s+)?120\s+(?:enrolled\s+)?students\b|\b40\s?(?:%|per ?cent\b)/i },
+  { label: 'survey response count or rate', source: SURVEY, context: /respond|respons|enrolled|answered/i, marker: /\b48\s*(?:of|out of|\/)\s*(?:the )?120\b|\b48\s+(?:survey\s+)?(?:responses?|replies)\s+from\s+(?:the\s+)?120\s+(?:enrolled\s+)?students\b|\b40\s?(?:%|per ?cent\b)/i },
   { label: 'weekly AI use', source: SURVEY, context: /week(?:ly|\b)|regularly/i, marker: /\b27\s*(?:of|out of|\/)\s*(?:the )?48\b|\b56\s?(?:%|per ?cent\b)/i },
   { label: 'weekly users asking for explanations', source: SURVEY, context: /explain|explanation/i, marker: /\b19\s*(?:of|out of|\/)\s*(?:the )?27\b|\b70\s?(?:%|per ?cent\b)/i },
   { label: 'weekly users asking for answers', source: SURVEY, context: /answers?/i, marker: /\b8\s*(?:of|out of|\/)\s*(?:the )?27\b|\b8\s+(?:mainly\s+)?(?:ask|asked)\s+(?:the AI\s+)?for answers\b/i },
   { label: 'respondents never shown how to check AI', source: SURVEY, context: /shown|train|taught|how to check|guidance/i, marker: /\b41\s*(?:of|out of|\/)\s*(?:the )?48\b|\b85\s?(?:%|per ?cent\b)/i },
   { label: 'weekly AI users’ quiz mean', source: QUIZ, context: /quiz|mean|averag|scor/i, marker: /\b27\.5\b/ },
   { label: 'other respondents’ quiz mean', source: QUIZ, context: /quiz|mean|averag|scor/i, marker: /\b24\.5\b/ },
-  { label: 'quiz score difference', source: QUIZ, context: /quiz|scor|higher|lower|differ|gap|advantage/i, marker: /\b3[- ]points?\b/i },
+  { label: 'quiz score difference', source: QUIZ, context: /quiz|scor|higher|lower|differ|gap|advantage/i, marker: /\b3[- ]points?\b|\bthree[- ]point(?:s? (?:ahead|higher|lower|more|less|behind)| (?:gap|difference|advantage))\b/i },
   { label: 'weekly AI users’ seminar attendance', source: METHOD, context: /seminar|attend/i, marker: /\b7\.1\b/ },
   { label: 'other respondents’ seminar attendance', source: METHOD, context: /seminar|attend/i, marker: /\b5\.4\b/ },
 ];
@@ -80,7 +80,7 @@ const CLAIM_FACTS: Record<string, string[]> = {
   c6: ['weekly users asking for explanations'],
 };
 
-const sentencesOf = (text: string) => text.split(/(?<=[.!?])\s+|[;\n]+/);
+const sentencesOf = (text: string) => text.split(/(?<=[.!?])\s+|(?<=[.!?]["”])\s+|[;\n]+/);
 function factSentences(text: string, fact: typeof FACTS[number]) {
   return sentencesOf(text).filter((sentence) => fact.context.test(sentence) && fact.marker.test(sentence));
 }

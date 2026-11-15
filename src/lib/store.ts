@@ -76,7 +76,7 @@ export function sessionCounts() {
 /** Persist the result and clear non-consenting participants' own words in the same transaction. */
 export function finishSession(s: Session, result: Result) {
   const database = db();
-  database.exec('BEGIN');
+  database.exec('SAVEPOINT finish_session');
   try {
     if (!s.store) {
       database.prepare("DELETE FROM events WHERE session_id = ? AND type IN ('chat_user','chat_assistant','draft_snapshot','submit','debrief','viva')").run(s.id);
@@ -85,9 +85,9 @@ export function finishSession(s: Session, result: Result) {
     s.data.result = result;
     saveSession(s);
     logEvent(s.id, 'scored', { incidents: result.incidents, discern: result.discern.type ?? result.discern.status, decide: result.decide.band ?? result.decide.status });
-    database.exec('COMMIT');
+    database.exec('RELEASE finish_session');
   } catch (error) {
-    database.exec('ROLLBACK');
+    database.exec('ROLLBACK TO finish_session; RELEASE finish_session');
     throw error;
   }
 }
@@ -126,4 +126,26 @@ export function observe(s: Session, timeLimit: number): Observations {
     quoteText: s.store,
     ...(d.viva?.answer !== undefined ? { viva: { kind: d.viva.kind, claimId: d.viva.claimId, question: d.viva.question, answer: d.viva.answer } } : {}),
   };
+}
+
+/** Only called by the authenticated teacher-review endpoint. */
+export function pendingAdaptiveSessions(): Session[] {
+  return (db().prepare("SELECT * FROM sessions WHERE state = 'viva' AND mode = 'full' AND json_extract(data, '$.adaptive.status') = 'review' ORDER BY created_at DESC LIMIT 100").all() as Row[])
+    .map(toSession).filter(s => s.data.adaptive?.status === 'review');
+}
+
+/** Apply a teacher decision only to the exact review round the teacher inspected. */
+export function updatePendingReview(id: string, round: number, apply: (session: Session) => void): boolean {
+  const database = db();
+  database.exec('BEGIN IMMEDIATE');
+  try {
+    const s = getSession(id);
+    const pending = s?.state === 'viva' && s.data.adaptive?.status === 'review' && s.data.adaptive.turns.length === round;
+    if (pending) apply(s);
+    database.exec('COMMIT');
+    return pending;
+  } catch (error) {
+    database.exec('ROLLBACK');
+    throw error;
+  }
 }

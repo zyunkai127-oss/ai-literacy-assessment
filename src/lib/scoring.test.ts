@@ -358,3 +358,19 @@ describe('student-view stability across formatting and wording', () => {
     });
   }
 });
+
+describe('quick-mode demo briefs', () => {
+  it('recognises the survey response count and quiz gap in ordinary prose', () => {
+    const brief = 'The week 8 survey received 48 replies from 120 enrolled students. The week 9 quiz note puts weekly users three points ahead on average.';
+    expect(quality(scenario, obs({ brief }), t)).toMatchObject({ validPoints: 2, attributed: 2 });
+  });
+
+  it('does not turn an individual three-point score into a group difference', () => {
+    expect(quality(scenario, obs({ brief: 'One student scored three points on the quiz.' }), t).validPoints).toBe(0);
+  });
+
+  it('keeps the following recommendation separate from a quoted survey comment', () => {
+    const brief = 'One student said AI "got a referencing rule wrong and I lost marks." These results prove that using AI improves learning, so the committee should require every student to use it.';
+    expect(quality(scenario, obs({ brief }), t).hasView).toBe(true);
+  });
+});

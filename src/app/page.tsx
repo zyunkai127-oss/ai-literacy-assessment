@@ -24,7 +24,7 @@ export default function Consent() {
       <div className="card">
         <h2>Before you start</h2>
         <p><b>The AI in this activity may sometimes be wrong.</b> As with any AI assistant, how far to rely on it is up to you. This is not a hunt for mistakes: do the task the way you would do real coursework.</p>
-        <p>When live chat is available, your messages go to the AI provider with names and contact details removed.</p>
+        <p>Your chat, brief and follow-up answers are sent to the AI provider with names and contact details removed. The full version adapts up to two follow-up questions and may pause for teacher review.</p>
         <p>All data, names and references are fictional. The feedback uses your chat, source opens, editor snapshots, submitted brief and your answers to a few questions at the end. <b>There is no overall score and no ranking.</b> Where the session does not give enough evidence, the feedback says so.</p>
         <label className="check">
           <input type="checkbox" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} />

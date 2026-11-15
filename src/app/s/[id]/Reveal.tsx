@@ -14,6 +14,35 @@ const DIRECT: [keyof Reveal['direct']['features'], string][] = [['topic', 'Topic
 const RATING = ['no reason given', 'general', 'specific'];
 const NOT_ENOUGH = 'Not enough evidence in this session';
 
+const FACTOR_COPY: Record<string, { supported?: string; practise?: string; insufficient: string }> = {
+  direction: {
+    supported: 'You asked the assistant for help with the task.',
+    insufficient: 'It’s unclear what help you asked for.',
+  },
+  basis: {
+    supported: 'You checked a claim and cited the sources for your figures.',
+    practise: 'You used an AI answer. We saw no source check in this session.',
+    insufficient: 'We couldn’t confirm how you checked your figures.',
+  },
+  selection: {
+    supported: 'You explained a choice you made in your brief.',
+    insufficient: 'Say what you kept, changed or skipped and why.',
+  },
+  uncertainty: {
+    supported: 'You explained why the quiz scores alone can’t show AI’s effect.',
+    practise: 'You said AI caused the difference in marks. The quiz only compared two groups.',
+    insufficient: 'It’s unclear what limits you see in the data.',
+  },
+  ownership: {
+    practise: 'Some wording matches the AI reply. Check your declaration.',
+    insufficient: 'You reported who wrote the brief.',
+  },
+  review: {
+    supported: 'You explained what you did with the feedback.',
+    insufficient: 'We couldn’t confirm how you used the feedback.',
+  },
+};
+
 const Mark = ({ ok }: { ok: boolean | null }) => (
   <span className={`mark ${ok === null ? 'na' : ok ? 'yes' : 'no'}`} aria-label={ok === null ? 'not observed' : ok ? 'yes' : 'no'}>{ok === null ? '–' : ok ? '✓' : '✗'}</span>
 );
@@ -30,20 +59,55 @@ export function RevealPage({ api }: { api: string }) {
   if (error) return <main className="wrap"><p role="alert" className="error">{error}</p></main>;
   if (!data) return <main className="wrap"><p className="muted">Loading results</p></main>;
 
-  if (data.collaboration) return (
-    <main className="wrap">
-      <h1>How you worked with the assistant</h1>
-      <p className="muted">AI-assisted feedback on this session, with no overall score or ranking. Missing evidence does not mean missing ability.</p>
+  if (data.collaboration) {
+    const briefChecks = [data.quality.validPoints >= 2, data.quality.sourced, data.quality.hasView, data.quality.wordsOK, data.quality.onTime];
+    const checksMet = briefChecks.filter(Boolean).length;
+    const factors = [...data.collaboration].sort((a, b) => Number(b.status === 'practise') - Number(a.status === 'practise'));
+    const causalConcern = factors.some(c => c.id === 'uncertainty' && c.status === 'practise');
+    const sourceConcern = factors.some(c => c.id === 'basis' && c.status === 'practise');
+    const focus = causalConcern ? 'The quiz gap cannot establish cause.' : sourceConcern ? 'Check the source before using an AI answer.' : 'How you worked with the assistant';
+    return (
+    <main className="wrap session-report">
+      <header className="report-overview">
+        <div className="report-dial" aria-label={checksMet + ' of 5 brief checks met'}>
+          <div className="dial-track" aria-hidden="true" style={{background: `conic-gradient(from 270deg at 50% 100%, ${briefChecks.map((ok, i) => `${ok ? '#286950' : '#d4dad8'} ${i * 36}deg ${(i + 1) * 36 - 2}deg, white 0 ${(i + 1) * 36}deg`).join(', ')}, transparent 0)`}} />
+          <strong>{checksMet}<small> / 5</small></strong><span>Brief checks met</span>
+        </div>
+        <div><p className="report-kicker">Session feedback</p><h1>{focus}</h1>
+          <p className="muted">{causalConcern ? 'Your brief attributes the difference in marks to AI. Students chose whether to use AI, and seminar attendance also differed.' : sourceConcern ? 'You used an AI answer in your brief. We saw no source check in this session.' : 'Explore the decisions and evidence from your briefing activity.'}</p>
+        </div>
+      </header>
       {data.assessment?.status === 'unavailable' && <p role="status" className="notice">AI-assisted feedback is temporarily unavailable. Task-completion checks are shown below.</p>}
-      {data.collaboration.map((check) => (
-        <section className="card" key={check.id}>
-          <h2>{check.title}</h2>
-          <p><span className={`pill ${check.status === 'supported' ? 's2' : check.status === 'practise' ? 's1' : ''}`}>{check.status === 'supported' ? 'Evidence observed' : check.status === 'practise' ? 'Worth reflecting on' : 'Not enough evidence'}</span></p>
-          <p>{check.evidence}</p>
-          <details><summary>How this is judged</summary><p className="body">{check.criterion}</p></details>
-          {check.status !== 'supported' && <p className="muted">{check.next}</p>}
-        </section>
-      ))}
+      <section className="report-factors"><h2>{data.followUp ? 'Common core factors' : 'Collaboration factors'}</h2>
+      {factors.map((check) => {
+        const recorded = check.id === 'ownership' && check.status === 'insufficient' && data.assessment?.status === 'complete';
+        const unavailable = data.assessment?.status === 'unavailable';
+        const copy = FACTOR_COPY[check.id];
+        let label = 'Fair';
+        if (recorded) label = 'Recorded';
+        else if (unavailable) label = 'Feedback unavailable';
+        else if (check.status === 'supported') label = 'Great';
+        else if (check.status === 'practise') label = 'Need Work';
+
+        const subtitle = unavailable ? 'We couldn’t assess this part of the session.'
+          : copy?.[check.status] ?? check.evidence;
+        const references = check.evidence.match(/Evidence messages: .+$/)?.[0];
+        const partialEvidence = check.status === 'insufficient' && !recorded && !unavailable
+          && check.evidence !== 'The session did not provide enough clear evidence for this dimension.';
+        return (
+          <details className="report-factor" key={check.id}>
+            <summary>
+              <span>{check.title}{subtitle && <small className="factor-subtitle">{subtitle}</small>}</span>
+              <span className={`factor-status ${recorded || unavailable ? 'neutral' : check.status}`}>{label}</span>
+            </summary>
+            <div className="factor-detail">{references && <p>{references}</p>}{partialEvidence && <p>{check.evidence}</p>}
+              <h3>How this is judged</h3><p>{check.criterion}</p>
+              {!recorded && check.status !== 'supported' && <><h3>Next time</h3><p>{check.next}</p></>}
+            </div>
+          </details>
+        );
+      })}
+      </section>
       <section className="card">
         <h2>The brief itself</h2>
         <p><Mark ok={data.quality.validPoints >= 2} /> At least 2 recognised data points ({data.quality.validPoints} found)</p>
@@ -53,9 +117,22 @@ export function RevealPage({ api }: { api: string }) {
         <p><Mark ok={data.quality.onTime} /> Submitted on time</p>
         <p className="muted small">These are task-completion checks, not a measure of AI literacy or a full fact-check.</p>
       </section>
+      {data.followUp && <section className="card">
+        <h2>Adaptive follow-up</h2>
+        <p className="muted">These observations are separate from the common core task. Different questions and support levels are not directly comparable.</p>
+        {data.followUp.status === 'unavailable' && <p role="status">Some follow-up feedback is unavailable.</p>}
+        {data.followUp.turns.map(turn => <div className="decision" key={turn.id}>
+          <p><b>Question {turn.id} · {turn.target === 'basis' ? 'Tracing evidence' : turn.target === 'uncertainty' ? 'Calibrating conclusions' : 'Explaining choices'}</b></p>
+          <p>{turn.support === 'none' ? 'No content hint' : turn.support === 'general' ? 'General hint' : 'Specific help'} · {turn.outcome === 'met' ? 'Criterion demonstrated' : turn.outcome === 'not_met' ? 'Criterion not yet demonstrated' : 'Not enough clear evidence'}</p>
+          <p className="muted small">Evidence: follow-up answer {turn.id}. {turn.reviewed === 'human' ? 'Reviewed by a teacher.' : turn.reviewed === 'automatic' ? 'Cross-checked by the verifier.' : 'No verified judgement.'}</p>
+        </div>)}
+        <details><summary>System activity</summary><p className="small">{data.followUp.calls} model calls · {(data.followUp.latencyMs / 1000).toFixed(1)} seconds in model calls · {data.followUp.inputTokens} input tokens · {data.followUp.outputTokens} output tokens</p></details>
+      </section>}
       <a href="/">Start a new session</a>
     </main>
   );
+
+  }
 
   const { headline, discern, decide, own, direct, quality } = data;
   const wrongSeen = discern.hits + discern.misses;

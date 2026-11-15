@@ -5,3 +5,5 @@ node_modules
 data/*.db*
 next-env.d.ts
 *.tsbuildinfo
+
+data/adaptive-evaluation-*.json
