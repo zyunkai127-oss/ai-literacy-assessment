@@ -173,7 +173,7 @@ export function decide(s: Scenario, o: Observations, codes: ClaimCode[], t: Thre
   const title = (id: string) => s.claims.find((c) => c.id === id)!.title;
   const items: DecideItem[] = [];
   for (const c of codes.filter((x) => x.d1)) {
-    const how = c.queried ? 'you questioned it and the assistant stood by it' : c.chatRejected ? 'you said in the chat that it was wrong' : c.flagged ? 'you said you did not rely on it' : 'you noticed a problem';
+    const how = c.queried ? 'you asked the assistant about it' : c.chatRejected ? 'you said in the chat that it was wrong' : c.flagged ? 'you said you did not rely on it' : 'you noticed a problem';
     items.push({ id: 'D1', claimId: c.id, outcome: c.d1!, evidence: c.d1 === 'success'
       ? `"${title(c.id)}": ${how}, and it is not in your brief.`
       : `"${title(c.id)}": ${how}, but your brief still includes "${c.used}".` });
@@ -326,7 +326,7 @@ function review(s: Scenario, c: ClaimCode): ClaimReview {
   if (c.used) parts.push(`Your brief includes "${c.used}".`);
   else if (c.fixed) parts.push(`Your brief uses the corrected figure ("${c.fixed}").`);
   else parts.push('This statement is not in your brief.');
-  if (c.queried) parts.push('You asked the assistant about it and it stood by the statement.');
+  if (c.queried) parts.push('You asked the assistant about it.');
   if (c.chatRejected) parts.push(claim.role === 'signal' ? 'In the chat you said it was wrong or that you would leave it out.' : 'In the chat you said it was wrong.');
   if (c.flagged) parts.push('At the debrief you said you did not rely on it.');
   if (c.leastSure) parts.push('You listed it among the points you were least sure about.');

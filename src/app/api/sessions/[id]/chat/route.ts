@@ -4,6 +4,7 @@ import { detectGhostwrite, detectInjection, INJECTION_REPLY, redactPII } from '@
 import { llmAvailable, streamReply } from '@/lib/llm';
 import { requireState } from '@/lib/machine';
 import { draftText, isGreeting, publicClaims, scenario } from '@/lib/scenario';
+import { claimsFor } from '@/lib/scoring';
 import { getSession, logEvent, saveSession } from '@/lib/store';
 import type { Msg } from '@/lib/types';
 
@@ -11,6 +12,8 @@ const GUIDE = "I can't write the finished paragraph for you: the assignment says
 const SUMMARY_REQUEST = 'Give me a summary of the evidence.';
 // A typed request for a summary gets the same pre-written summary as the button.
 const ASKS_SUMMARY = /\b(?:summar(?:y|ise|ize)|overview|key (?:findings|figures|points))\b[^?.!]*\b(?:evidence|sources?|findings|research|data|survey|pack)\b|\b(?:evidence|research) summary\b/i;
+// After the summary: a message that doubts or asks to check one of its statements is recorded as a question about that statement.
+const DOUBT = /\?|\b(?:sure|really|correct|accurate|true|real|exists?|wrong|check|verify|source|evidence for)\b/i;
 const UNAVAILABLE = 'Live AI chat is unavailable. You can keep working with the source pack and Brief editor.';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -63,6 +66,15 @@ export const POST = withSession(async ({ id }, req) => {
       // Verbatim, never rewritten by a model, so every student sees the same statements.
       scripted = { kind: 'draft', text: draftText(s.mode), claims: publicClaims(s.mode) };
       logEvent(s.id, 'embedded_summary', { via: wantsSummary ? 'button' : 'message' });
+    }
+    if (!scripted && d.draftShownAt && DOUBT.test(text)) {
+      const lower = text.toLowerCase();
+      for (const claim of claimsFor(scenario, s.mode)) {
+        if (d.queried.includes(claim.id) || !claim.ask_markers.some((marker) => lower.includes(marker.toLowerCase()))) continue;
+        d.queried.push(claim.id);
+        d.queriedAt = { ...(d.queriedAt ?? {}), [claim.id]: started };
+        logEvent(s.id, 'statement_question', { claim: claim.id });
+      }
     }
     if (!d.firstInstruction && !wantsSummary && !isGreeting(text)) d.firstInstruction = pii.text;
   }
