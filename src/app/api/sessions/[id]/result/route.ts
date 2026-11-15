@@ -1,33 +1,29 @@
 import { json, withSession } from '@/lib/api';
 import { requireState } from '@/lib/machine';
 import { scenario } from '@/lib/scenario';
-import { claimsFor, DIMENSIONS, scoreTotal } from '@/lib/scoring';
+import { claimsFor } from '@/lib/scoring';
 import { cohortSessions, logEvent } from '@/lib/store';
 
 // GET /api/sessions/:id/result -> the reveal. Only available once the session has reached the reveal state.
+// There is no overall score and no per-dimension number: the internal rates behind the Discern type and the Decide band are not sent.
 export const GET = withSession((s) => {
   requireState(s.state, 'reveal');
-  const { nodes, suggestions } = s.data.result!;
-  const claims = claimsFor(scenario, s.mode);
-  const legacy = nodes.some((node) => !node.criterion);
-  const peers = cohortSessions().filter((peer) => peer.mode === s.mode && peer.data.draftShownAt);
-  const cohort = nodes.filter((node) => node.flawed && node.reveal).flatMap((node) => {
-    const exposed = peers.filter((peer) => !peer.data.controlledClaimId || peer.data.controlledClaimId === node.id);
-    if (exposed.length < 5) return [];
-    const trusted = exposed.filter((peer) => peer.data.result?.nodes.some((item) => item.id === node.id && item.trustedError)).length;
-    return [{ nodeId: node.id, pct: Math.round(100 * trusted / exposed.length), n: exposed.length }];
-  });
+  const result = s.data.result!;
+  const { H: _h, F: _f, ...discern } = result.discern;
+  const { mean: _mean, ci: _ci, ...decide } = result.decide;
+  const shown = result.claims.length > 0;
+
+  // Group comparison: of today's consenting, finished sessions in the same version, how many handed in each wrong statement.
+  const peers = cohortSessions().filter((peer) => peer.mode === s.mode && (peer.data.result?.claims.length ?? 0) > 0);
+  const cohort = peers.length < 5 ? [] : result.claims.filter((c) => c.flawed).map((c) => ({
+    claimId: c.id,
+    shipped: peers.filter((peer) => peer.data.result!.claims.some((x) => x.id === c.id && x.used)).length,
+    n: peers.length,
+  }));
   logEvent(s.id, 'reveal_view', {});
   return json({
-    overall: scoreTotal(nodes),
-    dimensions: DIMENSIONS.map((dimension) => ({ dimension, ...scoreTotal(nodes.filter((node) => node.dimension === dimension)) })),
-    nodes: nodes.map((node) => ({
-      ...node,
-      statement: node.statement ?? (node.reveal ? claims.find((claim) => claim.id === node.id)?.text : undefined),
-      evidence: !s.store && legacy && node.id === 'instruction' ? 'The original rubric checked your first instruction.' : node.evidence,
-    })),
-    suggestions,
-    cohort,
-    legacy,
+    ...result, discern, decide, cohort,
+    statements: shown ? claimsFor(scenario, s.mode).map((c) => ({ id: c.id, text: c.text, wrong: c.role === 'signal' })) : [],
+    notice: scenario.meta.notice,
   });
 });

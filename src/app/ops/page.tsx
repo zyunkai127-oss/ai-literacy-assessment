@@ -2,7 +2,13 @@
 import { useEffect, useState } from 'react';
 
 type Stats = { n: number; avg: number; p95: number } | null;
-type Ops = { sessions: { state: string; n: number }[]; events: number; guardrails: Record<string, number>; replies: Record<string, number>; modelFirstTokenMs: Stats; modelTotalMs: Stats; errors: string[] };
+type Ops = {
+  sessions: { state: string; n: number }[]; events: number;
+  guardrails: Record<string, number>; guardrailActions: Record<string, string>;
+  budgetBlocks: number; offer: { shown: number; accepted: number; declined: number }; claimQueries: number;
+  replies: Record<string, number>; modelFirstTokenMs: Stats; modelTotalMs: Stats; errors: string[];
+};
+const LABEL: Record<string, string> = { pii: 'personal data redactions', injection: 'requests for internal instructions or the answer key', ghostwrite: 'requests for finished work' };
 
 export default function OpsPage() {
   const [ops, setOps] = useState<Ops | null>(null);
@@ -19,8 +25,16 @@ export default function OpsPage() {
       <h1>Operations</h1>
       <p className="muted">Last 24 hours. Refreshes every 5 seconds.</p>
       <div className="card">
-        <h2>Guardrail triggers</h2>
-        {['pii', 'injection', 'ghostwrite'].map((k) => <p key={k}><b>{ops.guardrails[k] ?? 0}</b> {k === 'pii' ? 'personal data redactions' : k === 'injection' ? 'possible requests for internal instructions' : 'requests for finished work'}</p>)}
+        <h2>Guardrails (active)</h2>
+        {Object.keys(LABEL).map((k) => (
+          <p key={k}><b>{ops.guardrails[k] ?? 0}</b> {LABEL[k]}<br /><span className="muted small">Action: {ops.guardrailActions[k]}</span></p>
+        ))}
+      </div>
+      <div className="card">
+        <h2>Controlled moments</h2>
+        <p><b>{ops.budgetBlocks}</b> source opens blocked by the reading budget</p>
+        <p>Offer to write the final paragraph: <b>{ops.offer.shown}</b> shown, <b>{ops.offer.accepted}</b> accepted, <b>{ops.offer.declined}</b> declined</p>
+        <p><b>{ops.claimQueries}</b> times a student questioned a statement and the assistant stood by it</p>
       </div>
       <div className="card">
         <h2>Assistant replies</h2>
