@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import raw from '../../data/scenario.json';
 import { detectAccept, detectGhostwrite, detectInjection, redactPII } from './guardrails';
 import { advance, StateError } from './machine';
-import { BETA_Q, codeClaims, findMarker, NEGATION, overlap, rateViva, scoreSession, selectViva } from './scoring';
+import { BETA_Q, codeClaims, findMarker, NEGATION, overlap, quality, rateViva, scoreSession, selectViva } from './scoring';
 import type { Observations, Scenario } from './types';
 
 const scenario = raw as unknown as Scenario;
@@ -169,7 +169,7 @@ describe('Own, follow-up and quality (spec §6.3, §6.5, §7)', () => {
     expect(rateViva('hit', c3, 'It was not on the reading list and the year 2031 is in the future.')).toBe(2);
     expect(rateViva('hit', c3, 'I looked at the data and it seemed off to me.')).toBe(1);
     expect(rateViva('hit', c3, 'Just a feeling')).toBe(0);
-    expect(rateViva('confident_wrong', scenario.claims[1], 'The survey report says 65 per cent, I checked it.')).toBe(1);
+    expect(rateViva('confident_wrong', scenario.claims[1], 'The survey report says 65 per cent, I checked it.')).toBe(2);
   });
   it('requires each data point to name its source in the same sentence', () => {
     const q = scoreSession(scenario, obs({ brief: 'The survey found 56% use AI weekly. Weekly users scored 27.5 on average.' })).quality;
@@ -224,4 +224,137 @@ describe('guardrails', () => {
     expect(detectAccept('yes please', scenario.accept_markers)).toBe(true);
     expect(detectAccept('no thanks, I will write it myself', scenario.accept_markers)).toBe(false);
   });
+});
+
+
+describe('browser walkthrough regressions', () => {
+  it('recognises a response-count paraphrase as a correct statement used', () => {
+    const r = scoreSession(scenario, obs({
+      brief: 'The module survey received 48 responses from 120 enrolled students. The survey reports 56% use AI weekly.',
+      flagged: ['c2', 'c3', 'c4'],
+    }));
+    expect(r.claims.find((c) => c.id === 'c1')?.sdt).toBe('CR');
+    expect(r.discern.status).toBe('ok');
+    expect(code({ brief: 'There were 48 responses from 121 enrolled students.' }, 'c1').used).toBeNull();
+  });
+
+  it('recognises a specific explanation for a confidently wrong decision', () => {
+    const c2 = scenario.claims.find((c) => c.id === 'c2')!;
+    expect(rateViva('confident_wrong', c2, 'I relied on the assistant summary because it confidently repeated 65%. I opened the survey, but I did not reconcile its 27 out of 48 with the assistant figure before submitting.')).toBe(2);
+    expect(rateViva('confident_wrong', c2, 'I trusted the source because it seemed reliable.')).toBe(1);
+    expect(rateViva('confident_wrong', c2, 'No idea')).toBe(0);
+    expect(rateViva('confident_wrong', c2, '56%')).toBe(0);
+  });
+});
+
+
+describe('student view paraphrases from the browser demo', () => {
+  const firstBrief = 'The Module survey report, week 8 received 48 responses from 120 students, a 40% response rate. The survey report states that 56% of respondents use AI at least weekly. The Week 9 quiz summary reports means of 27.5/40 for weekly users and 24.5/40 for others. This observational comparison cannot establish causation because students selected their own AI use and attendance differed. One survey commenter uses AI to explain slides, then checks the textbook. The evidence is inconclusive about AI’s effect on learning. The committee should encourage verification and collect stronger evidence before making a causal claim.';
+
+  it('recognises the unchanged first-round briefing and preserves its other task checks', () => {
+    const q = quality(scenario, obs({ brief: firstBrief }), t);
+    expect(q).toMatchObject({ hasView: true, met: true, validPoints: 4, attributed: 4, sourced: true, wordsOK: true, onTime: true });
+  });
+
+  it.each([
+    'One survey commenter uses AI to explain slides, then checks the textbook.',
+    'A survey respondent describes getting explanations of lecture slides and verifying them against a textbook.',
+    'One participant reports pasting questions into AI and editing the answers.',
+    'The survey comments describe a student losing marks after AI gave incorrect referencing advice.',
+    'A respondent says AI helps late at night when nobody is available to ask.',
+  ])('recognises an attributed source-backed paraphrase: %s', (brief) => {
+    expect(quality(scenario, obs({ brief }), t).hasView).toBe(true);
+  });
+
+  it.each([
+    'Students should use AI to explain slides and check the textbook.',
+    'The quiz shows that AI users scored three points higher.',
+    'One survey commenter enjoyed the campus cafeteria.',
+    'One student said something about AI.',
+    'The committee should ask students whether they check the textbook.',
+    'No student view was included in this brief.',
+  ])('does not invent a student view from unrelated or instructional wording: %s', (brief) => {
+    expect(quality(scenario, obs({ brief }), t).hasView).toBe(false);
+  });
+});
+
+
+describe('student view boundary cases', () => {
+  it.each([
+    'One survey respondent says AI helps when they are stuck at 1 a.m.',
+    'Several respondents reported using AI to explain lecture slides and checking a textbook afterwards.',
+    'A survey comment describes pasting the question into AI, then tidying the answer.',
+    'One survey commenter says a referencing mistake cost them marks.',
+    'One survey commenter uses AI for explanations of slides; they then verify the answer against the textbook.',
+    'A student said: "I use it to explain lecture slides, then I check against the textbook."',
+    'One student says "It got a referencing rule wrong and I lost marks."',
+  ])('keeps source-backed variations: %s', (brief) => {
+    expect(quality(scenario, obs({ brief }), t).hasView).toBe(true);
+  });
+  it.each([
+    'One student did not say they used AI to explain slides.',
+    'Imagine a student who uses AI to explain lecture slides.',
+    'One survey commenter checks the textbook? That is a question for future research.',
+    'The survey report recommends checking against the textbook.',
+    'One student said nothing about how they use AI.',
+    'The invented quote is "I use it to explain lecture slides".',
+  ])('rejects negated, hypothetical and invented views: %s', (brief) => {
+    expect(quality(scenario, obs({ brief }), t).hasView).toBe(false);
+  });
+});
+
+
+describe('student view final regression cases', () => {
+  it.each([
+    ['One student says they use AI to explain lecture slides, then check against the textbook.', true],
+    ['One survey participant describes using AI when stuck late at night.', true],
+    ['A respondent says a citation error from AI led to losing marks.', true],
+    ['One student said the quiz was easy.', false],
+    ['No survey comments mention checking the textbook.', false],
+    ['The survey comments do not mention checking the textbook.', false],
+    ['One survey commenter denies using AI to explain slides.', false],
+    ['One survey commenter says AI does not help late at night.', false],
+    ['The survey shows 56% of respondents use AI weekly.', false],
+    ['A student view should be added here.', false],
+    ['Survey comments were collected late at night.', false],
+    ['One student replied late at night.', false],
+    ['One survey respondent uses AI to polish answers after pasting assignment questions.', true],
+    ['One student polished a response for the survey report.', false],
+  ])('evaluates %s as %s', (brief, expected) => {
+    expect(quality(scenario, obs({ brief }), t).hasView).toBe(expected);
+  });
+});
+
+
+describe('student-view stability across formatting and wording', () => {
+  const cases: [string, boolean][] = [
+    ['One survey commenter uses AI to explain slides, then checks the textbook.', true],
+    ['A survey respondent says AI clarifies lecture slides.', true],
+    ['A participant says AI helps them understand lecture slides.', true],
+    ['A student uses AI to get explanations of course materials.', true],
+    ['A survey comment describes pasting questions into AI and editing answers.', true],
+    ['One respondent reports checking explanations against a textbook.', true],
+    ['One respondent says a referencing mistake cost them marks.', true],
+    ['One survey participant says AI helps when they are stuck late at night.', true],
+    ['A student said: "It got a referencing rule wrong and I lost marks."', true],
+    ['One student said something about AI.', false],
+    ['No survey comments mention checking the textbook.', false],
+    ['Students should use AI to explain slides and check the textbook.', false],
+    ['Imagine a student who uses AI to explain lecture slides.', false],
+    ['One survey commenter enjoyed the campus cafeteria.', false],
+    ['The quiz shows a three-point difference.', false],
+  ];
+  const formats = [
+    ['original', (text: string) => text],
+    ['upper case', (text: string) => text.toUpperCase()],
+    ['lower case', (text: string) => text.toLowerCase()],
+    ['extra spaces', (text: string) => text.replace(/ /g, '   ')],
+    ['line breaks', (text: string) => text.replace(/ /g, '\n')],
+    ['curly quotes', (text: string) => text.replace(/"([^"]+)"/g, '“$1”')],
+  ] as const;
+  for (const [format, transform] of formats) {
+    it.each(cases)(format + ' preserves judgement for %s', (brief, expected) => {
+      expect(quality(scenario, obs({ brief: transform(brief) }), t).hasView).toBe(expected);
+    });
+  }
 });

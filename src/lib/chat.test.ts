@@ -7,43 +7,25 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const persona = (p: Partial<Persona> = {}): Persona => ({ mode: 'judge', guideOnly: false, secondsLeft: 200, summaryGiven: true, ...p });
+const persona = (p: Partial<Persona> = {}): Persona => ({ mode: 'judge', guideOnly: false, secondsLeft: 200, ...p });
 
 describe('live chat', () => {
-  it('gives the model the task, anonymised comments and its own summary, but none of the evidence sources', () => {
-    for (const mode of ['judge', 'full'] as const) {
-      const prompt = systemPrompt(persona({ mode }));
-      expect(prompt).toContain(scenario.task.title);
-      expect(prompt).toContain(scenario.task.prompt);
-      for (const requirement of scenario.task.requirements) expect(prompt).toContain(requirement);
-      // The summary it "wrote", including the wrong statements, verbatim.
-      expect(prompt).toContain('65% of respondents use AI tools at least weekly');
-      expect(prompt).toContain('I check against the textbook');
-      // No evidence-source text: the model must not be a free way to verify (D2).
-      expect(prompt).not.toContain('27 of 48 respondents (56%)');
-      expect(prompt).not.toContain('56%');
-      expect(prompt).not.toContain('No causal conclusion');
-      expect(prompt).not.toContain('observational');
-      expect(prompt).not.toContain('No external studies');
-      for (const id of scenario.evidence_sections) expect(prompt).not.toContain(scenario.pack.find((p) => p.id === id)!.body);
-      for (const name of scenario.names) {
-        expect(prompt).not.toContain(name);
-        for (const part of name.split(' ')) expect(prompt).not.toContain(part);
-      }
-      // Nothing from the answer key.
-      for (const claim of scenario.claims) expect(prompt).not.toContain(claim.reveal_text);
-    }
+  it('supplies all sources with anonymous comments and no planted summary or answer key', () => {
+    const prompt = systemPrompt(persona());
+    expect(prompt).toContain(scenario.task.prompt);
+    for (const id of scenario.evidence_sections) expect(prompt).toContain(scenario.pack.find((p) => p.id === id)!.body);
+    expect(prompt).toContain('I check against the textbook');
+    for (const name of scenario.names) expect(prompt).not.toContain(name);
+    expect(prompt).not.toContain('65% of respondents');
+    expect(prompt).not.toContain('Marlowe');
+    for (const claim of scenario.claims) expect(prompt).not.toContain(claim.reveal_text);
   });
 
-  it('does not mention the fabricated study before the summary exists', () => {
-    expect(systemPrompt(persona({ summaryGiven: false }))).not.toContain('Marlowe');
-  });
-
-  it('changes its rules with the student state', () => {
-    expect(systemPrompt(persona())).not.toContain('do not write or rewrite the paragraph');
-    expect(systemPrompt(persona({ guideOnly: true }))).toContain('do not write or rewrite the paragraph');
+  it('responds to the current message and preserves writing and time boundaries', () => {
+    expect(systemPrompt(persona())).toContain('Respond directly to the latest message');
+    expect(systemPrompt(persona({ guideOnly: true }))).toContain('Guide-only mode');
+    expect(systemPrompt(persona())).toContain('Do not write the finished briefing');
     expect(systemPrompt(persona({ secondsLeft: 30 }))).toContain('30 words or fewer');
-    expect(systemPrompt(persona({ secondsLeft: 90 }))).not.toContain('30 words or fewer');
   });
 
   it('merges adjacent same-role messages, drops blocked ones and starts on a user turn', () => {
