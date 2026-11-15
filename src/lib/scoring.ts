@@ -8,16 +8,18 @@ import type {
 
 // ---------- text helpers ----------
 
-const NEGATION = /\b(not|no|cannot|can't|doesn't|don't|unclear|whether|without|unproven|false|wrong|incorrect|invented|unverified|unapproved|unsupported|fabricated|absent)\b/i;
+export const NEGATION = /\b(not|no|cannot|can't|doesn't|don't|unclear|whether|without|unproven|false|wrong|incorrect|invented|unverified|unapproved|unsupported|fabricated|absent)\b/i;
+/** Narrower test for statements whose wording is not itself a hedge: only an explicit rejection of the statement discounts a match. */
+const REJECTION = /\b(wrong|incorrect|false|invented|fabricated|fake|made up|unverified|unapproved|unsupported|absent|not on the|(?:does not|doesn't) exist|not (?:65|sixty))\b/i;
 const clauses = (text: string) => text.split(/(?<=[.!?])\s+|[;\n]+|\b(?:but|however|rather than)\b/i).filter(Boolean);
 
 export const mmss = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 export const wordCount = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
 
-/** First matched text for any pattern. With allowNegated, clauses that qualify or reject the claim are skipped. */
-export function findMarker(text: string, patterns: string[], allowNegated = false): string | null {
-  for (const part of allowNegated ? clauses(text) : [text]) {
-    if (allowNegated && NEGATION.test(part)) continue;
+/** First matched text for any pattern. With a skip pattern, the text is split into clauses and clauses matching it are ignored. */
+export function findMarker(text: string, patterns: string[], skip: RegExp | null = null): string | null {
+  for (const part of skip ? clauses(text) : [text]) {
+    if (skip && skip.test(part)) continue;
     for (const pattern of patterns) {
       const match = new RegExp(pattern, 'i').exec(part);
       if (match) return match[0];
@@ -108,7 +110,8 @@ export function codeClaims(s: Scenario, o: Observations): ClaimCode[] {
   if (!o.draftShown) return [];
   return claimsFor(s, o.mode).map((c) => {
     const used = c.role === 'signal'
-      ? findMarker(o.brief, c.error_markers, true)
+      // Spec §4.1: hedged or negated clauses are discounted only for statements marked negation_ok (c4). For the others, only an explicit rejection is.
+      ? findMarker(o.brief, c.error_markers, c.negation_ok ? NEGATION : REJECTION)
       : findMarker(o.brief, c.keep_markers) ?? claimFactHit(o.brief, c.id);
     const fixed = c.role === 'signal' && !used ? findMarker(o.brief, c.fixed_markers ?? []) ?? claimFactHit(o.brief, c.id) : null;
     const flagged = o.flagged.includes(c.id);
@@ -185,8 +188,9 @@ export function decide(s: Scenario, o: Observations, codes: ClaimCode[], t: Thre
   const acc = accuracy(codes);
   if (acc !== null) {
     const over = o.confidence - acc;
+    const total = codes.filter((c) => c.used || c.fixed).length;
     items.push({ id: 'D4', outcome: over < t.OVERCONF ? 'success' : 'fail',
-      evidence: `You said you were ${Math.round(o.confidence * 100)}% confident. ${Math.round(acc * 100)}% of the assistant's statements in your brief were sound.` });
+      evidence: `You said you were ${Math.round(o.confidence * 100)}% confident. ${Math.round(acc * total)} of the ${total} statement(s) from the assistant's summary that your brief relies on were sound.` });
   }
   const sCount = items.filter((i) => i.outcome === 'success').length;
   const fCount = items.length - sCount;
@@ -340,6 +344,7 @@ function suggestions(s: Scenario, r: Omit<Result, 'suggestions' | 'headline'>, r
   for (const c of r.own.checks.filter((x) => x.ok === false)) out.push(c.advice);
   for (const c of reviews.filter((x) => x.sdt === 'MISS')) out.push(c.advice);
   const unique = [...new Set(out.filter(Boolean))].slice(0, 3);
+  if (!unique.length && r.discern.status === 'insufficient') return [s.advice.none];
   return unique.length ? unique : ['You handled every point in this session well. Try the same habits on a real assignment, where nobody has warned you.'];
 }
 

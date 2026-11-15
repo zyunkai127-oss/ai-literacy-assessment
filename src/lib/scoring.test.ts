@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import raw from '../../data/scenario.json';
 import { detectAccept, detectGhostwrite, detectInjection, redactPII } from './guardrails';
 import { advance, StateError } from './machine';
-import { BETA_Q, codeClaims, findMarker, overlap, rateViva, scoreSession, selectViva } from './scoring';
+import { BETA_Q, codeClaims, findMarker, NEGATION, overlap, rateViva, scoreSession, selectViva } from './scoring';
 import type { Observations, Scenario } from './types';
 
 const scenario = raw as unknown as Scenario;
@@ -22,6 +22,19 @@ const obs = (o: Partial<Observations>): Observations => ({
   p2Shown: true, p2Accepted: false, onTime: true, quoteText: true, ...o,
 });
 const code = (o: Partial<Observations>, id: string) => codeClaims(scenario, obs(o)).find((c) => c.id === id)!;
+
+describe('wrong figure next to an unrelated negation', () => {
+  it('still counts 65% as used when the same clause negates something else', () => {
+    const c = code({ brief: '65% of respondents use AI weekly and most have not been shown how to check answers.' }, 'c2');
+    expect(c.used).toBe('65%');
+    expect(c.sdt).toBe('MISS');
+  });
+  it('does not count an explicit rejection of the figure as using it', () => {
+    const c = code({ brief: 'The assistant gave 65%, which is wrong. The survey report says 56% use AI weekly.' }, 'c2');
+    expect(c.used).toBeNull();
+    expect(c.fixed).toBeTruthy();
+  });
+});
 
 describe('five golden students (spec §10)', () => {
   it('A: avoids the AI and writes from the sources', () => {
@@ -168,8 +181,8 @@ describe('Own, follow-up and quality (spec §6.3, §6.5, §7)', () => {
 describe('markers', () => {
   it('skips qualified clauses for error markers', () => {
     const c4 = scenario.claims.find((c) => c.id === 'c4')!;
-    expect(findMarker('This proves that AI improves learning.', c4.error_markers, true)).toBeTruthy();
-    expect(findMarker('This does not show that AI improves learning.', c4.error_markers, true)).toBeNull();
+    expect(findMarker('This proves that AI improves learning.', c4.error_markers, NEGATION)).toBeTruthy();
+    expect(findMarker('This does not show that AI improves learning.', c4.error_markers, NEGATION)).toBeNull();
   });
 });
 

@@ -115,7 +115,7 @@ export function observe(s: Session, timeLimit: number): Observations {
     confidence: d.debrief?.confidence ?? 0.5,
     declared: d.debrief?.declared ?? 'MINE',
     namesToAI: d.namesSent,
-    ghostRequested: d.ghostwrite && !d.p2Accepted,
+    ghostRequested: !!d.ghostRequested,
     p2Shown: !!d.p2ShownAt,
     p2Accepted: !!d.p2Accepted,
     onTime: !d.submittedAt || sec(d.submittedAt) <= timeLimit + 5,

@@ -51,7 +51,9 @@ export interface Msg {
   text: string;
   ts: number;
   claims?: { id: string; text: string }[];
-  scripted?: 'draft' | 'reask' | 'offer' | 'refusal' | 'greeting';
+  scripted?: 'draft' | 'reask' | 'offer' | 'refusal' | 'greeting' | 'guide';
+  /** Blocked by the injection guardrail: stored for the record, never sent to the model. */
+  blocked?: boolean;
 }
 
 export interface VivaRecord { kind: VivaKind; claimId: string | null; question: string; answer?: string }
@@ -62,7 +64,10 @@ export interface SessionData {
   draftShownAt?: number;
   firstInstruction?: string;
   namesSent: string[];
+  /** Guide-only mode: set by a request for finished work or by accepting the offer. Stays on for the session. */
   ghostwrite: boolean;
+  /** The student asked for finished work unprompted (not as a reply to the offer). */
+  ghostRequested?: boolean;
   queried: string[];
   queriedAt?: Record<string, number>;
   opens: { section: string; ts: number }[];
