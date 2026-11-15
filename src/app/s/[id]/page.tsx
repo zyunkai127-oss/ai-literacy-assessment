@@ -25,8 +25,14 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
 
   if (error) return <main className="wrap"><p className="error">{error}</p><a href="/">Start again</a></main>;
   if (!view) return <main className="wrap"><p className="muted">Loading</p></main>;
-  if (view.state === 'intro') return <Intro view={view} api={api} onStart={load} />;
-  if (view.state === 'work') return <Work view={view} api={api} onDone={load} />;
-  if (view.state === 'debrief' || view.state === 'viva') return <Debrief key={view.state} view={view} api={api} onDone={load} />;
+  // Leaving mid-session abandons it; the reveal page has its own link.
+  const restart = (
+    <a className="restart" href="/" onClick={(e) => { if (!window.confirm('Leave this session and start again? Your progress here will be lost.')) e.preventDefault(); }}>
+      Start again
+    </a>
+  );
+  if (view.state === 'intro') return <>{restart}<Intro view={view} api={api} onStart={load} /></>;
+  if (view.state === 'work') return <>{restart}<Work view={view} api={api} onDone={load} /></>;
+  if (view.state === 'debrief' || view.state === 'viva') return <>{restart}<Debrief key={view.state} view={view} api={api} onDone={load} /></>;
   return <RevealPage api={api} />;
 }

@@ -71,3 +71,6 @@ label.choice:has(input:disabled) { opacity: 0.5; cursor: not-allowed; }
 .card.headline.none { border-left-color: var(--line); }
 .card.headline h3 { font-size: 13px; color: var(--muted); margin-top: 12px; }
 @media (max-width: 900px) { .cols { grid-template-columns: 1fr; overflow-y: auto; } .work { height: auto; } .col { min-height: 320px; } .col.references { min-height: auto; } .dims { grid-template-columns: 1fr; } }
+
+.restart { position: fixed; left: 14px; bottom: 10px; z-index: 20; font-size: 13px; color: var(--muted); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px; text-decoration: none; }
+.restart:hover { color: var(--ink, inherit); }
