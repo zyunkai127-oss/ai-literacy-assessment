@@ -47,3 +47,5 @@ Open the [student activity](http://localhost:3000) or the [teacher dashboard](ht
 The app uses Next.js, TypeScript, SQLite and the Anthropic API. The AI receives redacted session text. Students choose whether to store their work. If they opt out, the app clears their chat, brief and written follow-up answers when they finish and keeps the structured feedback.
 
 The [scenario and source pack](data/scenario.json) contain the fictional teaching materials. The [design notes](docs/) document the earlier controlled activity and its scoring rationale.
+
+The [three-layer assessment framework](docs/05_three_layer_framework.md) explains how the evidence fits together. In the live activity, chat and editing show how students use AI, and follow-up questions explore decisions the logs cannot explain. An earlier controlled scenario gave everyone the same claims to check. Only standardised tasks scored by shared rules can support comparisons between students.
