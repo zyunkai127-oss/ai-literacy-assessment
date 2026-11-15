@@ -3,8 +3,6 @@ import type { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { scenario } from './scenario';
-import { claimsFor } from './scoring';
 import type { Mode, Observations, Result, Session, SessionData, SessionState } from './types';
 
 const g = globalThis as unknown as { __alcDb?: DatabaseSync };
@@ -74,18 +72,18 @@ export function sessionCounts() {
   return db().prepare('SELECT state, COUNT(*) AS n FROM sessions GROUP BY state').all() as { state: string; n: number }[];
 }
 
-/** Persist the result and clear non-consenting participants' transient work together. */
+/** Persist the result and clear non-consenting participants' own words in the same transaction. */
 export function finishSession(s: Session, result: Result) {
   const database = db();
   database.exec('BEGIN');
   try {
     if (!s.store) {
-      database.prepare("DELETE FROM events WHERE session_id = ? AND type IN ('chat_user','chat_assistant','draft_snapshot','submit','debrief')").run(s.id);
+      database.prepare("DELETE FROM events WHERE session_id = ? AND type IN ('chat_user','chat_assistant','draft_snapshot','submit','debrief','viva')").run(s.id);
       s.data = { messages: [], turns: 0, namesSent: [], ghostwrite: false, queried: [], opens: [] };
     }
     s.data.result = result;
     saveSession(s);
-    logEvent(s.id, 'scored', { nodes: result.nodes.map((node) => [node.id, node.score]) });
+    logEvent(s.id, 'scored', { incidents: result.incidents, discern: result.discern.type ?? result.discern.status, decide: result.decide.band ?? result.decide.status });
     database.exec('COMMIT');
   } catch (error) {
     database.exec('ROLLBACK');
@@ -98,31 +96,30 @@ export function observe(s: Session, timeLimit: number): Observations {
   const start = s.startedAt ?? s.createdAt;
   const sec = (ts: number) => Math.max(0, (ts - start) / 1000);
   const d = s.data;
-  const openedAfterDraft: Record<string, number> = {};
-  for (const o of d.opens) {
-    if (d.draftShownAt && o.ts >= d.draftShownAt && openedAfterDraft[o.section] === undefined) openedAfterDraft[o.section] = sec(o.ts);
-  }
-  const revisions = d.draftShownAt
-    ? (db().prepare("SELECT payload FROM events WHERE session_id = ? AND type = 'draft_snapshot' AND ts >= ? ORDER BY id")
-        .all(s.id, d.draftShownAt) as { payload: string }[]).map(({ payload }) => JSON.parse(payload).text as string)
-    : [];
+  const openedAt: Record<string, number> = {};
+  for (const o of d.opens) if (openedAt[o.section] === undefined) openedAt[o.section] = sec(o.ts);
+  const queriedAt: Record<string, number> = {};
+  for (const [id, ts] of Object.entries(d.queriedAt ?? {})) queriedAt[id] = sec(ts);
   return {
     mode: s.mode,
-    firstInstruction: d.firstInstruction ?? '',
     brief: d.brief ?? '',
-    openedAfterDraft,
-    openedAfterTeammate: d.teammateAt ? [...new Set(d.opens.filter((o) => o.ts >= d.teammateAt!).map((o) => o.section))] : [],
-    teammateAt: d.teammateAt,
+    firstInstruction: d.firstInstruction ?? '',
+    assistantReplies: d.messages.filter((m) => m.role === 'assistant' && m.scripted !== 'refusal').map((m) => m.text),
+    studentMessages: d.messages.filter((m) => m.role === 'user' && !!d.draftShownAt && m.ts >= d.draftShownAt).map((m) => m.text),
+    draftShown: !!d.draftShownAt,
+    flagged: d.debrief?.flagged ?? [],
+    leastSure: d.debrief?.leastSure ?? [],
     queried: d.queried,
-    exposedClaimIds: d.controlledClaimId ? [d.controlledClaimId]
-      : d.draftShownAt ? claimsFor(scenario, s.mode).map((claim) => claim.id) : [],
-    revisions,
-    studentMessages: d.messages.filter((message) => message.role === 'user' && !!d.draftShownAt && message.ts >= d.draftShownAt),
-    assistantReplies: d.messages.filter((message) => message.role === 'assistant').map((message) => message.text),
-    commentsOpened: d.opens.some((open) => open.section === 'comments'),
-    namesSentToAI: d.namesSent,
-    ghostwriteRequested: d.ghostwrite,
-    overtime: !!d.submittedAt && sec(d.submittedAt) > timeLimit + 5,
-    quoteInstruction: s.store,
+    queriedAt,
+    openedAt,
+    confidence: d.debrief?.confidence ?? 0.5,
+    declared: d.debrief?.declared ?? 'MINE',
+    namesToAI: d.namesSent,
+    ghostRequested: d.ghostwrite && !d.p2Accepted,
+    p2Shown: !!d.p2ShownAt,
+    p2Accepted: !!d.p2Accepted,
+    onTime: !d.submittedAt || sec(d.submittedAt) <= timeLimit + 5,
+    quoteText: s.store,
+    ...(d.viva?.answer !== undefined ? { viva: { kind: d.viva.kind, claimId: d.viva.claimId, question: d.viva.question, answer: d.viva.answer } } : {}),
   };
 }

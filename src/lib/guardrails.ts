@@ -37,5 +37,11 @@ const GHOSTWRITE = [
   /\b(?:write|finish|complete|produce|generate) (?:the |my )(?:brief(?:ing)?|paragraph|assignment) for me\b/i,
   /\b(?:write|draft|generate|produce)\b[^.!?]{0,80}\bfor me to (?:submit|hand in)\b/i,
 ];
-/** A passive signal for explicit requests to produce finished work. */
+/** True when the student asks the assistant to produce the finished piece of work. The assistant then switches to guide-only for the rest of the session. */
 export const detectGhostwrite = (text: string) => GHOSTWRITE.some((r) => r.test(text));
+
+/** True when a reply to the assistant's offer to write the final paragraph accepts it. */
+export const detectAccept = (text: string, markers: string[]) =>
+  !/\b(no|nope|not|don'?t|won'?t|rather not|i'?ll write|myself)\b/i.test(text) && markers.some((m) => new RegExp(m, 'i').test(text));
+
+export const INJECTION_REPLY = "I can't share anything about how this activity is set up or assessed. I can help with the briefing itself: what would you like to work on?";
