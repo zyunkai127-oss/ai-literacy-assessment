@@ -1,0 +1,198 @@
+{
+  "meta": {
+    "needs_review": true,
+    "notice": "All module data, names and references in this scenario are fictional and were created for this activity."
+  },
+  "time_limit_s": { "full": 480, "judge": 180 },
+  "task": {
+    "title": "Briefing for your supervisor",
+    "prompt": "Your supervisor needs a short briefing paragraph (80 to 150 words) for the teaching committee on this question: \"Does using AI tools affect how well first-year students learn in this module?\"",
+    "requirements": [
+      "Include at least 2 data points and say where each comes from.",
+      "Include 1 student view from the survey comments.",
+      "You have an AI research assistant. It may sometimes be wrong.",
+      "The source pack on the left is the only trusted material."
+    ]
+  },
+  "pack": [
+    {
+      "id": "survey",
+      "title": "Module survey report, week 8",
+      "body": "Fictional data created for this activity.\n\n48 of the 120 enrolled students responded (40% response rate).\n\n27 of 48 respondents (56%) use AI tools at least weekly for coursework.\n\nOf those 27 weekly users, 19 (70%) mainly ask AI for explanations and 8 mainly ask it for answers.\n\n41 of 48 respondents (85%) said nobody had ever shown them how to check an AI answer."
+    },
+    {
+      "id": "quiz",
+      "title": "Week 9 quiz summary and method note",
+      "body": "Quiz marked out of 40.\n\nWeekly AI users: mean 27.5. Other respondents: mean 24.5. Difference: 3 points.\n\nMethod note: this is observational data. Students chose for themselves whether to use AI. Weekly users also attended more seminars (mean 7.1 of 8, against 5.4). No causal conclusion can be drawn from these figures."
+    },
+    {
+      "id": "refs",
+      "title": "Reading list for this briefing",
+      "body": "These are the only sources approved for the briefing:\n\n1. Module survey report, week 8 (internal).\n2. Week 9 quiz summary (internal).\n3. Module handbook, section 4: use of AI tools.\n\nNo external studies have been reviewed for this briefing."
+    },
+    {
+      "id": "comments",
+      "title": "Survey comments (raw, not anonymised)",
+      "body": "Priya Raman: \"I use it to explain lecture slides, then I check against the textbook.\"\n\nTom Ellery: \"Honestly I paste the question in and tidy up the answer.\"\n\nAisha Bello: \"It got a referencing rule wrong and I lost marks.\"\n\nLeo Marsh: \"It helps when I'm stuck at 1am and can't ask anyone.\""
+    }
+  ],
+  "names": ["Priya Raman", "Tom Ellery", "Aisha Bello", "Leo Marsh"],
+  "view_markers": ["explain lecture slides", "check against the textbook", "tidy up the answer", "referencing rule", "lost marks", "stuck at 1am", "can't ask anyone", "one student", "a student (said|wrote|reported|commented|told)", "students? (said|wrote|reported|commented)"],
+  "source_markers": ["survey", "quiz", "module report", "handbook"],
+  "draft_intro": "Here is a first draft with the evidence I found. Each statement is listed below so you can insert the ones you want.",
+  "draft_outro": "I can also pull out themes from the survey comments if you paste them here.",
+  "claims": [
+    {
+      "id": "c1",
+      "title": "Response count",
+      "text": "48 of the 120 enrolled students answered the week 8 module survey.",
+      "is_flawed": false,
+      "flaw_type": null,
+      "error_markers": [],
+      "keep_markers": ["48 of (the )?120", "40\\s?%"],
+      "section": "survey",
+      "ask_markers": ["48", "120", "response rate"],
+      "reask_text": "Yes, 48 of 120 enrolled students responded. That figure is from the week 8 module survey report.",
+      "reveal_text": "This statement was correct. The survey report gives 48 of 120 respondents.",
+      "advice": "A plain, checkable figure like this is safe to use once you have seen it in the source.",
+      "judge_path": false,
+      "needs_review": true
+    },
+    {
+      "id": "c2",
+      "title": "Weekly AI use",
+      "text": "65% of respondents use AI tools at least weekly for coursework.",
+      "is_flawed": true,
+      "flaw_type": "altered_number",
+      "error_markers": ["65\\s?%", "65 per ?cent", "sixty.five"],
+      "fixed_markers": ["56\\s?%", "27 of (the )?48", "56 per ?cent"],
+      "keep_markers": [],
+      "section": "survey",
+      "ask_markers": ["65", "weekly", "how many use"],
+      "reask_text": "I'm confident in that one: 65% of respondents reported using AI tools at least weekly. It comes from the week 8 survey.",
+      "reveal_text": "The assistant changed this number. The survey report says 27 of 48, which is 56%, not 65%. If asked about it, the assistant repeats the wrong figure with confidence.",
+      "advice": "Open the source for any number you plan to quote. A confident tone from the AI tells you nothing about whether a figure is right.",
+      "judge_path": true,
+      "needs_review": true
+    },
+    {
+      "id": "c3",
+      "title": "Supporting study",
+      "text": "This is in line with Marlowe & Quist (2031), Lantern Review of Learning, who reported a 23% grade gain among students using AI tools.",
+      "is_flawed": true,
+      "flaw_type": "fabricated_citation",
+      "error_markers": ["Marlowe", "Quist", "Lantern Review", "23\\s?%"],
+      "keep_markers": [],
+      "section": "refs",
+      "ask_markers": ["marlowe", "quist", "lantern", "23", "study", "citation", "reference", "doi"],
+      "reask_text": "Marlowe & Quist (2031) is a well-known study in this area, published in the Lantern Review of Learning. It reported a 23% grade gain. You can cite it as it stands.",
+      "reveal_text": "This reference does not exist. It was invented for this activity (note the publication year), and it is not on the reading list. If asked about it, the assistant describes it as well known.",
+      "advice": "Before you cite anything an AI gives you, find the reference in a source you trust. If you cannot find it, leave it out.",
+      "judge_path": true,
+      "needs_review": true
+    },
+    {
+      "id": "c4",
+      "title": "Quiz difference",
+      "text": "Weekly AI users scored 3 points higher on the week 9 quiz, which proves that using AI improves learning.",
+      "is_flawed": true,
+      "flaw_type": "correlation_as_causation",
+      "error_markers": ["proves", "improves learning", "AI (use )?(causes|caused|leads to|led to|results in)", "because (they|students) used? AI", "thanks to AI"],
+      "negation_ok": true,
+      "fixed_markers": ["3 points", "27\\.5", "24\\.5"],
+      "keep_markers": [],
+      "section": "quiz",
+      "ask_markers": ["prove", "causal", "causation", "correlation", "quiz", "3 points", "improves"],
+      "reask_text": "The quiz data supports it: weekly AI users averaged 27.5 against 24.5. That is clear evidence that using AI improves learning.",
+      "reveal_text": "The 3 point difference is real, but the claim that it proves AI improves learning is not supported. The method note says the data is observational and that weekly users also attended more seminars.",
+      "advice": "Keep the number, drop the causal claim. Ask what else could explain a difference before you write 'proves' or 'causes'.",
+      "judge_path": true,
+      "needs_review": true
+    },
+    {
+      "id": "c5",
+      "title": "Never shown how to check",
+      "text": "85% of respondents said nobody had ever shown them how to check an AI answer.",
+      "is_flawed": false,
+      "flaw_type": null,
+      "error_markers": [],
+      "keep_markers": ["85\\s?%", "41 of (the )?48"],
+      "section": "survey",
+      "ask_markers": ["85", "shown", "check an ai"],
+      "reask_text": "Yes: 41 of 48 respondents, which is 85%, said nobody had shown them how to check an AI answer.",
+      "reveal_text": "This statement was correct, even though the figure looks surprisingly high. The survey report gives 41 of 48, which is 85%.",
+      "advice": "Distrusting everything is not the same as checking. A surprising figure deserves a look at the source, not automatic rejection.",
+      "judge_path": true,
+      "needs_review": true
+    },
+    {
+      "id": "c6",
+      "title": "Explanations, not answers",
+      "text": "Of the weekly users, 19 of 27 (70%) mainly ask AI for explanations rather than answers.",
+      "is_flawed": false,
+      "flaw_type": null,
+      "error_markers": [],
+      "keep_markers": ["70\\s?%", "19 of (the )?27"],
+      "section": "survey",
+      "ask_markers": ["70", "19 of", "explanations"],
+      "reask_text": "Yes: 19 of the 27 weekly users, about 70%, said they mainly ask for explanations.",
+      "reveal_text": "This statement was correct. Your teammate's message saying it was wrong was part of the activity. The survey report gives 19 of 27, which is 70%.",
+      "advice": "When a person and an AI disagree, neither wins by default. Go to the source and decide for yourself.",
+      "judge_path": false,
+      "needs_review": true
+    }
+  ],
+  "teammate": {
+    "from": "Sam (teammate)",
+    "text": "Quick one: I'm sure that 70% explanations figure is wrong, I remember it being way lower. I'd just delete it.",
+    "target_claim": "c6",
+    "delay_s": 60
+  },
+  "nodes": [
+    {
+      "id": "instruction",
+      "dimension": "Effective",
+      "title": "Your first instruction to the assistant",
+      "reveal_text": "A clear instruction names the topic, the audience or length, and asks for sources. That saves follow-up turns.",
+      "advice": "Tell the AI the topic, who it is for, how long it should be and that you need sources, all in your first message.",
+      "judge_path": true,
+      "needs_review": true
+    },
+    {
+      "id": "completion",
+      "dimension": "Effective",
+      "title": "Did the brief meet the request?",
+      "reveal_text": "The request was for at least 2 data points and 1 student view, within the time limit.",
+      "advice": "Re-read the request before you submit and tick off each requirement.",
+      "judge_path": true,
+      "needs_review": true
+    },
+    {
+      "id": "ownership",
+      "dimension": "Independent",
+      "title": "How much of the brief is your own wording",
+      "reveal_text": "We compared your brief with the assistant's draft, phrase by phrase.",
+      "advice": "Use the AI's draft as raw material. Rewrite the argument in your own words so you know you can defend it.",
+      "judge_path": true,
+      "needs_review": true
+    },
+    {
+      "id": "privacy",
+      "dimension": "Responsible",
+      "title": "Classmates' names",
+      "reveal_text": "The survey comments were not anonymised. Pasting them into an AI tool, or naming the students in your brief, shares personal data about people who did not agree to that.",
+      "advice": "Remove names and other identifying details before you give material to an AI tool or quote it.",
+      "judge_path": true,
+      "needs_review": true
+    },
+    {
+      "id": "sourcing",
+      "dimension": "Responsible",
+      "title": "Saying where your data comes from",
+      "reveal_text": "The request asked you to say where each data point comes from, so a reader can check it.",
+      "advice": "Name the source next to each figure, for example 'week 8 module survey'.",
+      "judge_path": true,
+      "needs_review": true
+    }
+  ]
+}
