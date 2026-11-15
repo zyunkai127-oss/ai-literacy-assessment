@@ -1,4 +1,5 @@
 import { activeAssessments, assessCollaboration } from '@/lib/model-assessment';
+import { teacherReviewConfigured } from '@/lib/ops-auth';
 import { fail, json, withSession } from '@/lib/api';
 import { advance, requireState } from '@/lib/machine';
 import { submitAdaptiveAnswer } from '@/lib/adaptive';
@@ -16,7 +17,9 @@ export const POST = withSession(async ({ id }, req) => {
   requireState(s.state, 'viva');
   if (s.data.adaptive) {
     const flow = s.data.adaptive;
-    if (body.action === 'finish' && flow.status === 'unavailable') {
+    const teacherUnavailable = flow.status === 'review' && !teacherReviewConfigured();
+    if (body.action === 'finish' && (flow.status === 'unavailable' || teacherUnavailable)) {
+      flow.status = 'unavailable';
       completeAdaptiveSession(s); return json({ state: s.state });
     }
     if (body.action === 'retry') {

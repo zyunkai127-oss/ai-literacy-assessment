@@ -25,7 +25,7 @@ export function GET() {
       latency: stats(events.filter(e => e.type === 'adaptive_agent').map(e => e.payload.ms)),
       tokens: events.filter(e => e.type === 'adaptive_agent').reduce((n,e) => n+(e.payload.inputTokens ?? 0)+(e.payload.outputTokens ?? 0),0),
       benchmarkRuns: count('adaptive_evaluation'),
-      benchmarkMatched: count('adaptive_evaluation', p => p.matched === true),
+      benchmarkMatched: count('adaptive_evaluation', p => p.matched === true && p.verified === true),
       benchmarkUnavailable: count('adaptive_evaluation', p => p.unavailable === true),
     },
     sessions: sessionCounts(),

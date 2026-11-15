@@ -29,7 +29,7 @@ export default function OpsPage() {
       {ops.adaptive && <div className="card"><h2>Adaptive system telemetry</h2>
         <p>{ops.adaptive.calls} agent calls · {ops.adaptive.unavailable} unavailable · {ops.adaptive.verificationRejects} verifier rejections · {ops.adaptive.humanDecisions} human decisions</p>
         <p>{ops.adaptive.tokens} tokens · {stat(ops.adaptive.latency)}</p>
-        <p>Benchmark: {ops.adaptive.benchmarkMatched} matches in {ops.adaptive.benchmarkRuns} attempts · {ops.adaptive.benchmarkUnavailable} unavailable</p>
+        <p>Benchmark: {ops.adaptive.benchmarkMatched} verified matches in {ops.adaptive.benchmarkRuns} attempts · {ops.adaptive.benchmarkUnavailable} unavailable</p>
         <p className="muted small">Benchmark labels are provisional. These measure system behaviour, not student ability.</p>
       </div>}
       <p className="muted">Last 24 hours. Refreshes every 5 seconds.</p>
