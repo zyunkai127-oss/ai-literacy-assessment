@@ -60,6 +60,7 @@ export interface Msg {
 export interface VivaRecord { kind: VivaKind; claimId: string | null; question: string; answer?: string }
 
 export interface SessionData {
+  adaptive?: AdaptiveFlow;
   messages: Msg[];
   turns: number;
   draftShownAt?: number;
@@ -143,6 +144,7 @@ export interface CollaborationCheck {
 }
 
 export interface Result {
+  followUp?: FollowUpSummary;
   assessment?: { status: 'complete' | 'unavailable' };
   collaboration?: CollaborationCheck[];
   headline: { kind: Incident | 'best_call' | 'none'; claimId: string | null; happened: string; means: string; next: string };
@@ -154,4 +156,39 @@ export interface Result {
   incidents: Incident[];
   claims: ClaimReview[];
   suggestions: string[];
+}
+
+export type AdaptiveTarget = 'basis' | 'uncertainty' | 'selection';
+export type SupportLevel = 'none' | 'general' | 'specific';
+export type FollowUpOutcome = 'met' | 'not_met' | 'unclear';
+export interface FollowUpObservation {
+  outcome: FollowUpOutcome;
+  signal: 'accurate' | 'partial' | 'misconception' | 'ambiguous';
+  evidence: string;
+}
+export interface AdaptiveAction {
+  action: 'ask' | 'finish' | 'escalate';
+  questionId: string;
+  reason: 'probe' | 'deepen' | 'scaffold' | 'sufficient' | 'ambiguous';
+}
+export interface AdaptiveTurn {
+  id: number; questionId: string; target: AdaptiveTarget; support: SupportLevel;
+  answer?: string; observation?: FollowUpObservation; verified?: boolean; human?: boolean;
+}
+export interface AgentTrace {
+  role: 'observer' | 'planner' | 'verifier' | 'human';
+  event: string; round: number; ms: number; inputTokens: number; outputTokens: number; ts: number;
+}
+export interface AdaptiveFlow {
+  status: 'preparing' | 'asking' | 'review' | 'complete' | 'unavailable';
+  core: Result;
+  turns: AdaptiveTurn[];
+  trace: AgentTrace[];
+  candidate?: AdaptiveAction;
+  reviewReason?: string;
+}
+export interface FollowUpSummary {
+  status: 'complete' | 'unavailable';
+  turns: { id: number; target: AdaptiveTarget; support: SupportLevel; outcome: FollowUpOutcome; reviewed: 'automatic' | 'human' | 'unresolved' }[];
+  calls: number; latencyMs: number; inputTokens: number; outputTokens: number; humanReviewed: boolean;
 }

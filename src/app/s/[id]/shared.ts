@@ -1,5 +1,5 @@
 // Client-side helpers and view types. Nothing here may import scoring.ts or scenario.ts: those hold the answer key and stay on the server.
-import type { Mode, Msg, Result, SessionState } from '@/lib/types';
+import type { AdaptiveFlow, Mode, Msg, Result, SessionState, SupportLevel } from '@/lib/types';
 
 export type PackItem = { id: string; title: string; body?: string; locked: boolean };
 export type PublicMsg = Pick<Msg, 'role' | 'text' | 'ts' | 'claims'>;
@@ -15,6 +15,7 @@ export type View = {
   claims: { id: string; text: string }[];
   draftShownAt: number | null; offerShown: boolean;
   opened: Record<string, string>; remaining: number;
+  adaptive: { status: AdaptiveFlow['status']; round: number; turnId: number | null; support: SupportLevel | null; question: string | null; sources: { title: string; body: string }[] } | null;
   guideOnly: boolean; viva: { question: string } | null; liveModel: boolean;
 };
 export type Reveal = Omit<Result, 'discern' | 'decide'> & {

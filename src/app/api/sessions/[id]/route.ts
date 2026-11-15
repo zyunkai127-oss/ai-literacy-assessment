@@ -1,3 +1,4 @@
+import { publicAdaptive } from '@/lib/adaptive';
 import { json, withSession } from '@/lib/api';
 import { llmAvailable } from '@/lib/llm';
 import { evidenceBody, openedEvidence, publicClaims, publicScenario, scenario } from '@/lib/scenario';
@@ -20,6 +21,7 @@ export const GET = withSession((s) => {
     remaining: Math.max(0, scenario.budget[s.mode] - opened.length),
     guideOnly: d.ghostwrite,
     viva: s.state === 'viva' && d.viva ? { question: d.viva.question } : null,
+    adaptive: s.state === 'viva' && d.adaptive ? publicAdaptive(d.adaptive, scenario) : null,
     liveModel: llmAvailable(),
   });
 });

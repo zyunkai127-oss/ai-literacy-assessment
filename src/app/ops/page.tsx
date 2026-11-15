@@ -1,8 +1,10 @@
 'use client';
+import { TeacherReview } from './TeacherReview';
 import { useEffect, useState } from 'react';
 
 type Stats = { n: number; avg: number; p95: number } | null;
 type Ops = {
+  adaptive: { calls: number; unavailable: number; verificationRejects: number; humanDecisions: number; latency: Stats; tokens: number; benchmarkRuns: number; benchmarkMatched: number; benchmarkUnavailable: number };
   sessions: { state: string; n: number }[]; events: number;
   guardrails: Record<string, number>; guardrailActions: Record<string, string>;
   budgetBlocks: number; offer: { shown: number; accepted: number; declined: number }; claimQueries: number;
@@ -23,6 +25,13 @@ export default function OpsPage() {
   return (
     <main className="wrap">
       <h1>Operations</h1>
+      <TeacherReview />
+      {ops.adaptive && <div className="card"><h2>Adaptive system telemetry</h2>
+        <p>{ops.adaptive.calls} agent calls · {ops.adaptive.unavailable} unavailable · {ops.adaptive.verificationRejects} verifier rejections · {ops.adaptive.humanDecisions} human decisions</p>
+        <p>{ops.adaptive.tokens} tokens · {stat(ops.adaptive.latency)}</p>
+        <p>Benchmark: {ops.adaptive.benchmarkMatched} matches in {ops.adaptive.benchmarkRuns} attempts · {ops.adaptive.benchmarkUnavailable} unavailable</p>
+        <p className="muted small">Benchmark labels are provisional. These measure system behaviour, not student ability.</p>
+      </div>}
       <p className="muted">Last 24 hours. Refreshes every 5 seconds.</p>
       <div className="card">
         <h2>Guardrails (active)</h2>

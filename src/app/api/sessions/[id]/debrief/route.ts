@@ -2,7 +2,8 @@ import { activeAssessments, assessCollaboration } from '@/lib/model-assessment';
 import { fail, json, withSession } from '@/lib/api';
 import { advance } from '@/lib/machine';
 import { publicClaims, scenario } from '@/lib/scenario';
-import { collaborationFollowUp } from '@/lib/collaboration';
+import { startAdaptive } from '@/lib/adaptive';
+import { continueAdaptiveSession } from '@/lib/adaptive-session';
 import { finishSession, getSession, logEvent, observe, saveSession } from '@/lib/store';
 import type { Decision, Declared } from '@/lib/types';
 
@@ -37,11 +38,13 @@ export const POST = withSession(async ({ id }, req) => {
   s.state = next;
 
   if (next === 'viva') {
-    const o = observe(s, limit);
-    s.data.viva = collaborationFollowUp(o);
-    saveSession(s);
-    logEvent(s.id, 'viva_question', { kind: s.data.viva.kind, claim: s.data.viva.claimId });
-    return json({ state: s.state, question: s.data.viva.question });
+    activeAssessments.add(id);
+    try {
+      s.data.adaptive = startAdaptive(await assessCollaboration(scenario, observe(s, limit)));
+      saveSession(s);
+      await continueAdaptiveSession(s);
+    } finally { activeAssessments.delete(id); }
+    return json({ state: s.state });
   }
   activeAssessments.add(id);
   try {

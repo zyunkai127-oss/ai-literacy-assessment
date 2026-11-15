@@ -164,3 +164,34 @@ label.choice.on { box-shadow: inset 0 0 0 1px var(--accent); }
 .markdown blockquote { padding-left: 12px; border-left: 3px solid var(--accent); }
 .markdown table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin-bottom: 12px; }
 .markdown th, .markdown td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; }
+
+.session-report { max-width: 920px; }
+.report-overview, .report-factors { background: white; border: 1px solid var(--line); border-radius: 16px; margin-bottom: 20px; }
+.report-overview { display: grid; grid-template-columns: 185px 1fr; align-items: center; gap: 34px; padding: 34px; }
+.report-kicker { color: var(--accent); font-size: 13px; font-weight: 650; letter-spacing: .05em; }
+.report-overview h1 { font-size: clamp(25px, 4vw, 36px); margin-bottom: 10px; }
+.report-dial { position: relative; text-align: center; padding-top: 24px; }
+.dial-track { position: absolute; inset: 0 0 auto; aspect-ratio: 2; mask-image: radial-gradient(circle at 50% 100%, transparent 59%, black 60%); }
+.report-dial strong, .report-dial span { display: block; position: relative; }
+.report-dial strong { font-size: 39px; line-height: 1.35; }
+.report-dial small { font-size: 17px; color: var(--muted); font-weight: 500; }
+.report-dial span { font-size: 12px; }
+.report-factors { padding: 20px 26px 8px; }
+.report-factors h2 { color: var(--ink); }
+.report-factor { margin: 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: white; }
+.report-factor summary { display: grid; grid-template-columns: 1fr auto 10px; gap: 14px; align-items: center; padding: 16px 0; list-style: none; }
+.report-factor summary::-webkit-details-marker { display: none; }
+.report-factor summary::after { content: '›'; font-size: 20px; color: var(--muted); }
+.report-factor[open] summary::after { transform: rotate(90deg); }
+.factor-status { font-size: 12px; font-weight: 600; padding: 4px 9px; border-radius: 5px; color: #4e5961; background: #eef1f3; }
+.factor-status.supported { background: #e6f3e7; color: #286043; }
+.factor-status.practise { background: #ffebe4; color: #9b351d; }
+.factor-detail { max-width: 66ch; padding: 0 0 16px; color: var(--muted); }
+.factor-detail h3 { color: var(--ink); font-size: 14px; }
+@media (max-width: 600px) {
+  .session-report .report-overview { grid-template-columns: 1fr; gap: 20px; padding: 24px; }
+  .report-dial { width: 170px; margin: auto; }
+  .report-factors { padding-inline: 16px; }
+  .report-factor summary { gap: 8px; }
+  .factor-status { max-width: 110px; }
+}

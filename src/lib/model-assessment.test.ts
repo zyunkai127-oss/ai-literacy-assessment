@@ -53,6 +53,16 @@ describe('semantic assessment validation', () => {
     raw.checks[2] = { id: 'selection', status: 'insufficient', messages: [3] };
     expect(applyAssessment(complete, input, raw).collaboration?.find((c) => c.id === 'review')?.status).toBe('insufficient');
   });
+  it('accepts an unchecked adoption finding only with an assistant reply and no opened sources', () => {
+    const raw = decisions();
+    raw.checks[1] = { id: 'basis', status: 'practise', messages: [2] };
+    const input = assessmentInput(scenario, o, base());
+    const basis = (value: typeof input) => applyAssessment(base(), value, raw).collaboration?.find(c => c.id === 'basis');
+    expect(basis(input)?.status).toBe('practise');
+    expect(basis({ ...input, openedSources: ['survey'] })?.status).toBe('insufficient');
+    raw.checks[1].messages = [1];
+    expect(basis(input)?.status).toBe('insufficient');
+  });
   it('does not accept an unsupported ownership accusation', () => {
     const raw = decisions(); raw.checks[4] = { id: 'ownership', status: 'practise', messages: [1, 2] };
     expect(applyAssessment(base(), assessmentInput(scenario, o, base()), raw).collaboration?.find((c) => c.id === 'ownership')?.status).toBe('insufficient');

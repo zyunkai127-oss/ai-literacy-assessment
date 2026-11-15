@@ -127,3 +127,9 @@ export function observe(s: Session, timeLimit: number): Observations {
     ...(d.viva?.answer !== undefined ? { viva: { kind: d.viva.kind, claimId: d.viva.claimId, question: d.viva.question, answer: d.viva.answer } } : {}),
   };
 }
+
+/** Only called by the authenticated teacher-review endpoint. */
+export function pendingAdaptiveSessions(): Session[] {
+  return (db().prepare("SELECT * FROM sessions WHERE state = 'viva' AND mode = 'full' AND json_extract(data, '$.adaptive.status') = 'review' ORDER BY created_at DESC LIMIT 100").all() as Row[])
+    .map(toSession).filter(s => s.data.adaptive?.status === 'review');
+}
