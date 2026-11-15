@@ -177,3 +177,19 @@ describe('anchor: the pre-written evidence summary in live mode', () => {
     expect(r.discern.type).toBe('CALIBRATED');
   });
 });
+
+describe('anchor uses the debrief and restores the confident error', () => {
+  const brief = 'The week 8 survey found 65% of respondents use AI weekly, and 85% said nobody had shown them how to check an AI answer.';
+  it('flags the confident-and-wrong moment and reports Decide', () => {
+    const r = scoreCollaboration(scenario, observation({ brief, draftShown: true, confidence: 0.85, flagged: ['c3', 'c4'], queried: ['c2'] }));
+    expect(r.headline).toMatchObject({ kind: 'E1', claimId: 'c2' });
+    expect(r.incidents).toEqual(['E1']);
+    expect(r.claims.find((c) => c.id === 'c2')).toMatchObject({ ladder: 1, sdt: 'HIT' });
+    expect(r.decide.status).toBe('ok');
+    expect(r.discern.type).toBe('CALIBRATED');
+  });
+  it('does not flag it when the student listed the statement as least sure', () => {
+    const r = scoreCollaboration(scenario, observation({ brief, draftShown: true, confidence: 0.85, leastSure: ['c2'] }));
+    expect(r.incidents).toEqual([]);
+  });
+});

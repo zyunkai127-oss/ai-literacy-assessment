@@ -112,6 +112,20 @@ export function RevealPage({ api }: { api: string }) {
         <section className="card">
           <h2>The assistant’s evidence summary: statement by statement</h2>
           <p className="muted small">This part is the same for every student and is judged by fixed rules, not by AI. Some statements in the summary were wrong on purpose. Opening a source on its own is not counted, and nor is silently leaving a statement out.</p>
+          {data.headline.kind === 'E1' && (
+            <div className="card headline E1">
+              <h3>The moment you were confident, and wrong</h3>
+              <p>{data.headline.happened}</p>
+              <p><b>What it shows.</b> {data.headline.means}</p>
+              <p><b>What to do next.</b> {data.headline.next}</p>
+            </div>
+          )}
+          {data.decide.status === 'ok' && (
+            <details>
+              <summary>Acting on your doubts: <span className={`pill ${BAND_CLASS[data.decide.band!]}`}>{data.decide.band}</span>{data.decide.wide ? ' (few moments, so a rough read)' : ''}{data.decide.capped ? ' (limited by the confident error)' : ''}</summary>
+              <div className="body">{data.decide.items.map((item, i) => <p key={i} className="small"><Mark ok={item.outcome === 'success'} /> {item.evidence}</p>)}</div>
+            </details>
+          )}
           {data.discern.status === 'ok' ? (
             <>
               <p><span className="pill s1 type">{data.discern.label}</span> {data.discern.meaning}</p>
