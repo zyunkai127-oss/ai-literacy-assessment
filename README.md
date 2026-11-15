@@ -4,6 +4,8 @@ A student has one paragraph to answer a teaching committee’s question: does us
 
 Built for Reply Student Tech Clash, **AI on Campus · Track A**.
 
+Students can ask for an evidence summary using the chat button or a typed request. The fixed summary includes three deliberately incorrect claims. Students who see it report which statements they relied on. The results show how they handled each claim using rules shared across sessions.
+
 ## Try the activity
 
 - **Quick version:** Spend up to 4 minutes writing an 80–150 word brief. Submit it, report your confidence and say who wrote most of the wording.

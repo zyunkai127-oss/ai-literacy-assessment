@@ -62,3 +62,12 @@ describe('live chat', () => {
     expect(result.value).toEqual({ error: 'Live chat could not access the configured AI model.' });
   });
 });
+
+describe('after the evidence summary', () => {
+  it('tells the model not to volunteer corrections but to answer truthfully when asked directly', () => {
+    const p: Persona = { mode: 'judge', guideOnly: false, secondsLeft: 200, summaryShown: true };
+    expect(systemPrompt(p)).toContain('Do not volunteer corrections');
+    expect(systemPrompt(p)).toContain('answer truthfully');
+    expect(systemPrompt({ ...p, summaryShown: false })).not.toContain('Do not volunteer corrections');
+  });
+});

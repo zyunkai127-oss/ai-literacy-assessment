@@ -3,11 +3,17 @@ import { activeChats } from '@/lib/chatlock';
 import { detectGhostwrite, detectInjection, INJECTION_REPLY, redactPII } from '@/lib/guardrails';
 import { llmAvailable, streamReply } from '@/lib/llm';
 import { requireState } from '@/lib/machine';
-import { isGreeting, scenario } from '@/lib/scenario';
+import { draftText, isGreeting, publicClaims, scenario } from '@/lib/scenario';
+import { claimsFor } from '@/lib/scoring';
 import { getSession, logEvent, saveSession } from '@/lib/store';
 import type { Msg } from '@/lib/types';
 
 const GUIDE = "I can't write the finished paragraph for you: the assignment says it has to be in your own words. I can still help you plan it. Try one sentence on how many students use AI, one on what the quiz shows and how sure we can be, one student view, then your own conclusion. Which part do you want to start with?";
+const SUMMARY_REQUEST = 'Give me a summary of the evidence.';
+// A typed request for a summary gets the same pre-written summary as the button.
+const ASKS_SUMMARY = /\b(?:summar(?:y|ise|ize)|overview|key (?:findings|figures|points))\b[^?.!]*\b(?:evidence|sources?|findings|research|data|survey|pack)\b|\b(?:evidence|research) summary\b/i;
+// After the summary: a message that doubts or asks to check one of its statements is recorded as a question about that statement.
+const DOUBT = /\?|\b(?:sure|really|correct|accurate|true|real|exists?|wrong|check|verify|source|evidence for)\b/i;
 const UNAVAILABLE = 'Live AI chat is unavailable. You can keep working with the source pack and Brief editor.';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -15,9 +21,14 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // POST /api/sessions/:id/chat { text } -> text/event-stream of JSON events:
 //   {type:'guardrail',kind} | {type:'delta',text} | {type:'message',message} | {type:'error',message} | {type:'done'}
 //
-// Guardrails run first. All ordinary messages, including the first, go to the live model.
+// POST { action: 'summary' } instead of text asks for the assistant's evidence summary.
+//
+// Guardrails run first. The evidence summary is pre-written and identical for every student (the embedded layer:
+// see docs/05). Every other ordinary message goes to the live model.
 export const POST = withSession(async ({ id }, req) => {
-  const text = (await req.json())?.text;
+  const body = await req.json();
+  const wantsSummary = body?.action === 'summary';
+  const text = wantsSummary ? SUMMARY_REQUEST : body?.text;
   const s = getSession(id)!;
   requireState(s.state, 'work');
   if (typeof text !== 'string' || !text.trim() || text.length > 4000) return fail(400, 'text must be 1 to 4000 characters');
@@ -51,7 +62,21 @@ export const POST = withSession(async ({ id }, req) => {
       logEvent(s.id, 'guardrail', { kind: 'ghostwrite', via: 'request' });
       scripted = { kind: 'guide', text: GUIDE };
     }
-    if (!d.firstInstruction && !isGreeting(text)) d.firstInstruction = pii.text;
+    if (!scripted && !d.draftShownAt && (wantsSummary || ASKS_SUMMARY.test(text))) {
+      // Verbatim, never rewritten by a model, so every student sees the same statements.
+      scripted = { kind: 'draft', text: draftText(s.mode), claims: publicClaims(s.mode) };
+      logEvent(s.id, 'embedded_summary', { via: wantsSummary ? 'button' : 'message' });
+    }
+    if (!scripted && d.draftShownAt && DOUBT.test(text)) {
+      const lower = text.toLowerCase();
+      for (const claim of claimsFor(scenario, s.mode)) {
+        if (d.queried.includes(claim.id) || !claim.ask_markers.some((marker) => lower.includes(marker.toLowerCase()))) continue;
+        d.queried.push(claim.id);
+        d.queriedAt = { ...(d.queriedAt ?? {}), [claim.id]: started };
+        logEvent(s.id, 'statement_question', { claim: claim.id });
+      }
+    }
+    if (!d.firstInstruction && !wantsSummary && !isGreeting(text)) d.firstInstruction = pii.text;
   }
 
   // Only free chat needs the live model. Flags set above are kept even when it is unavailable.
@@ -67,7 +92,7 @@ export const POST = withSession(async ({ id }, req) => {
 
   const history = [...d.messages];
   const secondsLeft = scenario.time_limit_s[s.mode] - (started - (s.startedAt ?? started)) / 1000;
-  const persona = { mode: s.mode, guideOnly: d.ghostwrite, secondsLeft };
+  const persona = { mode: s.mode, guideOnly: d.ghostwrite, secondsLeft, summaryShown: !!d.draftShownAt };
   activeChats.add(id);
   const enc = new TextEncoder();
 
@@ -106,6 +131,7 @@ export const POST = withSession(async ({ id }, req) => {
             if (reply) {
               const message: Msg = { role: 'assistant', text: reply, ts: Date.now(), ...(error ? { failed: true } : {}), ...(scripted ? { scripted: scripted.kind } : {}), ...(scripted?.claims ? { claims: scripted.claims } : {}) };
               fresh.data.messages.push(message);
+              if (scripted?.kind === 'draft' && !fresh.data.draftShownAt) fresh.data.draftShownAt = message.ts;
               saveSession(fresh);
               send({ type: 'message', message: { role: message.role, text: message.text, ts: message.ts, ...(message.claims ? { claims: message.claims } : {}) }, draftShownAt: fresh.data.draftShownAt ?? null, guideOnly: fresh.data.ghostwrite });
             }

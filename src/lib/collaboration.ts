@@ -145,5 +145,12 @@ export function scoreCollaboration(s: Scenario, o: Observations): Result {
     requestedReview ? 'You requested a review. A completed review also needs an explicit decision and a brief meeting the separate task checks.' : 'No request to review the brief against sources or task requirements was recognised.',
     'A review request alone earns no positive judgement. The rule requires an assistant reply after the review request, a subsequent reasoned choice, and passing task checks. It cannot prove the feedback caused the final edits.',
     'Review against the requirements, then explain what you changed or chose to keep.');
-  return { ...result, collaboration: checks, suggestions: [], incidents: [], claims: [], own: { checks: [], viva: null } };
+  // Anchor: when the pre-written summary was shown, its statements are judged by rule. Reported separately from the observations above.
+  // It uses the per-statement debrief answers, confidence, questions put to the assistant, and the brief itself.
+  const anchor = o.draftShown ? scoreSession(s, { ...o, p2Shown: false, p2Accepted: false }) : null;
+  return {
+    ...result, collaboration: checks, suggestions: [], own: { checks: [], viva: null },
+    claims: anchor?.claims ?? [], discern: anchor?.discern ?? result.discern, decide: anchor?.decide ?? result.decide,
+    headline: anchor?.headline ?? result.headline, incidents: anchor ? anchor.incidents.filter((i) => i === 'E1') : [],
+  };
 }

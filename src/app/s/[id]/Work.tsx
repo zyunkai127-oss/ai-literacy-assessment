@@ -92,10 +92,10 @@ export function Work({ view, api, onDone }: { view: View; api: string; onDone: (
     }
   }
 
-  async function send() {
-    const text = input.trim();
+  async function send(summary = false) {
+    const text = summary ? 'Give me a summary of the evidence.' : input.trim();
     if (!text || busy || submitting) return;
-    setInput('');
+    if (!summary) setInput('');
     setChatError('');
     setNotices([]);
     setMessages((m) => [...m, { role: 'user', text, ts: Date.now() }]);
@@ -103,11 +103,11 @@ export function Work({ view, api, onDone }: { view: View; api: string; onDone: (
     let reply = '';
     let final: PublicMsg | null = null;
     try {
-      const res = await post(`${api}/chat`, { text });
+      const res = await post(`${api}/chat`, summary ? { action: 'summary' } : { text });
       if (!res.ok || !res.body) {
         // Nothing was stored for this message (for example, live chat is unavailable): take it back out of the thread.
         setMessages((m) => m.slice(0, -1));
-        setInput(text);
+        if (!summary) setInput(text);
         throw new Error(await errorOf(res, 'The assistant could not reply. Try again.'));
       }
       const reader = res.body.getReader();
@@ -217,9 +217,10 @@ export function Work({ view, api, onDone }: { view: View; api: string; onDone: (
           </div>
           {guideOnly && <p className="muted small" role="status">Guide-only mode: the assistant will help you plan and check, not write the paragraph.</p>}
           {chatError && <p role="alert" className="error small">{chatError}</p>}
+          {!messages.some((m) => m.claims) && <p className="small" style={{ margin: '6px 0' }}><button className="small" disabled={busy || submitting} onClick={() => send(true)}>Ask for an evidence summary</button></p>}
           <div className="composer">
             <input aria-label="Message the assistant" maxLength={4000} disabled={submitting} type="text" value={input} placeholder="Message the assistant" onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') send(); }} />
-            <button className="primary" disabled={busy || submitting || !input.trim()} onClick={send}>Send</button>
+            <button className="primary" disabled={busy || submitting || !input.trim()} onClick={() => send()}>Send</button>
           </div>
         </section>
 
