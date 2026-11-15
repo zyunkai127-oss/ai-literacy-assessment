@@ -14,12 +14,33 @@ const DIRECT: [keyof Reveal['direct']['features'], string][] = [['topic', 'Topic
 const RATING = ['no reason given', 'general', 'specific'];
 const NOT_ENOUGH = 'Not enough evidence in this session';
 
-const UNCONFIRMED: Record<string, [string, string]> = {
-  direction: ['Task request unclear', 'Look for a question about the task that received a reply.'],
-  basis: ['Source check unconfirmed', 'The assessment looks for a question about a specific claim and a reply, together with sourced figures in your brief.'],
-  selection: ['Choice and reason unclear', 'The assessment looks for your explanation of what you kept, changed or left out and why.'],
-  review: ['Review follow-through unconfirmed', 'The assessment looks for a review request, the reply, and a later explanation of what you did with the feedback.'],
-  uncertainty: ['Conclusion unclear', 'The assessment could not identify how your final brief addressed the limits of the data.'],
+const FACTOR_COPY: Record<string, { supported?: string; practise?: string; insufficient: string; label?: string }> = {
+  direction: {
+    supported: 'You asked the assistant for help with the task.',
+    insufficient: 'It’s unclear what help you asked for.', label: 'Task request unclear',
+  },
+  basis: {
+    supported: 'You checked a claim and cited the sources for your figures.',
+    practise: 'We couldn’t see a source check for the AI material you used.',
+    insufficient: 'We couldn’t confirm how you checked your figures.', label: 'Source check unconfirmed',
+  },
+  selection: {
+    supported: 'You explained a choice you made in your brief.',
+    insufficient: 'Say what you kept, changed or skipped and why.', label: 'Choice and reason unclear',
+  },
+  uncertainty: {
+    supported: 'Your brief explains what the data can and can’t show.',
+    practise: 'The quiz scores alone can’t tell us whether AI helped students learn.',
+    insufficient: 'It’s unclear what limits you see in the data.', label: 'Conclusion unclear',
+  },
+  ownership: {
+    practise: 'Some wording matches the AI reply. Check your declaration.',
+    insufficient: 'You reported who wrote the brief.',
+  },
+  review: {
+    supported: 'You explained what you did with the feedback.',
+    insufficient: 'We couldn’t confirm how you used the feedback.', label: 'Review follow-through unconfirmed',
+  },
 };
 
 const Mark = ({ ok }: { ok: boolean | null }) => (
@@ -61,20 +82,25 @@ export function RevealPage({ api }: { api: string }) {
       {factors.map((check) => {
         const recorded = check.id === 'ownership' && check.status === 'insufficient' && data.assessment?.status === 'complete';
         const unavailable = data.assessment?.status === 'unavailable';
-        const unconfirmed = check.status === 'insufficient' && !unavailable ? UNCONFIRMED[check.id] : undefined;
-        let label = unconfirmed?.[0] ?? 'Not enough evidence';
-        let detail = check.evidence;
-        if (unconfirmed && detail === 'The session did not provide enough clear evidence for this dimension.') detail = unconfirmed[1];
-        if (recorded) {
-          label = 'Recorded';
-          detail = 'Your declaration about who wrote the brief has been recorded.';
-        } else if (unavailable) label = 'Feedback unavailable';
+        const copy = FACTOR_COPY[check.id];
+        let label = copy?.label ?? 'Not enough evidence';
+        if (recorded) label = 'Recorded';
+        else if (unavailable) label = 'Feedback unavailable';
         else if (check.status === 'supported') label = 'Evidence observed';
         else if (check.status === 'practise') label = 'Needs work';
+
+        const subtitle = unavailable ? 'We couldn’t assess this part of the session.'
+          : copy?.[check.status] ?? check.evidence;
+        const references = check.evidence.match(/Evidence messages: .+$/)?.[0];
+        const partialEvidence = check.status === 'insufficient' && !recorded && !unavailable
+          && check.evidence !== 'The session did not provide enough clear evidence for this dimension.';
         return (
           <details className="report-factor" key={check.id}>
-            <summary><span>{check.title}</span><span className={`factor-status ${check.status}`}>{label}</span></summary>
-            <div className="factor-detail"><p>{detail}</p>
+            <summary>
+              <span>{check.title}{subtitle && <small className="factor-subtitle">{subtitle}</small>}</span>
+              <span className={`factor-status ${check.status}`}>{label}</span>
+            </summary>
+            <div className="factor-detail">{references && <p>{references}</p>}{partialEvidence && <p>{check.evidence}</p>}
               <h3>How this is judged</h3><p>{check.criterion}</p>
               {!recorded && check.status !== 'supported' && <><h3>Next time</h3><p>{check.next}</p></>}
             </div>
