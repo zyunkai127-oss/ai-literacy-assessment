@@ -1,31 +1,46 @@
 import { fail, json, withSession } from '@/lib/api';
 import { advance } from '@/lib/machine';
-import { draftText, publicClaims, scenario } from '@/lib/scenario';
-import { scoreSession } from '@/lib/scoring';
-import { logEvent, observe, saveSession, scrubIfNotStored } from '@/lib/store';
+import { publicClaims, scenario } from '@/lib/scenario';
+import { codeClaims, scoreSession, selectViva } from '@/lib/scoring';
+import { finishSession, getSession, logEvent, observe, saveSession } from '@/lib/store';
+import type { Decision, Declared } from '@/lib/types';
 
-// POST /api/sessions/:id/debrief { flagged: string[], confidence: 0..100, answer: string } -> debrief to reveal. Scoring happens here, on the server.
-export const POST = withSession(async (s, req) => {
-  const body = (await req.json()) as { flagged?: unknown; confidence?: unknown; answer?: unknown };
-  const valid = new Set(publicClaims(s.mode).map((c) => c.id));
-  if (!Array.isArray(body.flagged) || body.flagged.some((id) => !valid.has(id as string))) return fail(400, 'flagged must be a list of statement ids');
-  if (typeof body.confidence !== 'number' || body.confidence < 0 || body.confidence > 100) return fail(400, 'confidence must be a number from 0 to 100');
-  s.state = advance(s.state, 'debrief');
-  s.data.debrief = { flagged: body.flagged as string[], confidence: body.confidence / 100, answer: String(body.answer ?? '').slice(0, 1000) };
-  const o = observe(s);
-  const limit = scenario.time_limit_s[s.mode];
-  o.overtime = !!s.startedAt && !!s.data.submittedAt && (s.data.submittedAt - s.startedAt) / 1000 > limit + 5;
-  s.data.result = scoreSession(scenario, o, draftText(s.mode));
-  logEvent(s.id, 'debrief', { flagged: body.flagged, confidence: body.confidence, answer: s.data.debrief.answer });
-  logEvent(s.id, 'scored', { nodes: s.data.result.nodes.map((n) => [n.id, n.score]) });
-  if (!s.store) {
-    // No consent to store: keep the scores for this person's own results page, drop their words.
-    s.data.messages = [];
-    s.data.brief = '';
-    s.data.firstInstruction = '';
-    s.data.debrief.answer = '';
-    scrubIfNotStored(s);
+const DECISIONS: Decision[] = ['relied', 'unsure', 'not'];
+const DECLARED: Declared[] = ['MINE', 'MIXED', 'AI'];
+
+// POST /api/sessions/:id/debrief { decisions: { [claimId]: 'relied'|'unsure'|'not' }, confidence: 0..100, declared: 'MINE'|'MIXED'|'AI' }
+// Quick version: debrief -> reveal (scored here). Full version: debrief -> viva, returns the follow-up question.
+export const POST = withSession(async ({ id }, req) => {
+  const body = (await req.json()) as { decisions?: Record<string, unknown>; confidence?: unknown; declared?: unknown };
+  const s = getSession(id)!;
+  const next = advance(s.state, 'debrief', s.mode === 'full' ? 'viva' : 'reveal');
+
+  const decisions = body?.decisions ?? {};
+  if (typeof decisions !== 'object' || Array.isArray(decisions)) return fail(400, 'decisions must be an object');
+  const shown = s.data.draftShownAt ? publicClaims(s.mode).map((c) => c.id) : [];
+  for (const [claimId, decision] of Object.entries(decisions)) {
+    if (!shown.includes(claimId)) return fail(400, `Unknown statement "${claimId}"`);
+    if (!DECISIONS.includes(decision as Decision)) return fail(400, 'Each decision must be "relied", "unsure" or "not"');
   }
-  saveSession(s);
+  const pick = (d: Decision) => shown.filter((claimId) => decisions[claimId] === d);
+  if (pick('unsure').length > 2) return fail(400, 'Choose "Not sure" for at most 2 statements');
+  const confidence = body.confidence;
+  if (typeof confidence !== 'number' || !Number.isFinite(confidence) || confidence < 0 || confidence > 100) return fail(400, 'confidence must be a number from 0 to 100');
+  if (!DECLARED.includes(body.declared as Declared)) return fail(400, 'declared must be "MINE", "MIXED" or "AI"');
+
+  // Stored before anything is scored or selected: the follow-up question and E1 both depend on these answers.
+  s.data.debrief = { flagged: pick('not'), leastSure: pick('unsure'), confidence: confidence / 100, declared: body.declared as Declared };
+  logEvent(s.id, 'debrief', { ...s.data.debrief });
+  const limit = scenario.time_limit_s[s.mode];
+  s.state = next;
+
+  if (next === 'viva') {
+    const o = observe(s, limit);
+    s.data.viva = selectViva(scenario, o, codeClaims(scenario, o), scenario.thresholds);
+    saveSession(s);
+    logEvent(s.id, 'viva_question', { kind: s.data.viva.kind, claim: s.data.viva.claimId });
+    return json({ state: s.state, question: s.data.viva.question });
+  }
+  finishSession(s, scoreSession(scenario, observe(s, limit)));
   return json({ state: s.state });
 });

@@ -1,18 +1,29 @@
 import { fail, json, withSession } from '@/lib/api';
 import { requireState } from '@/lib/machine';
-import { scenario } from '@/lib/scenario';
-import { logEvent, saveSession } from '@/lib/store';
+import { evidenceBody, isEvidence, openedEvidence, scenario } from '@/lib/scenario';
+import { getSession, logEvent, saveSession } from '@/lib/store';
 
 // POST /api/sessions/:id/event { type: 'pack_open', section } | { type: 'draft', text }
-export const POST = withSession(async (s, req) => {
-  requireState(s.state, 'work');
+// pack_open returns { ok, body, remaining }. The three evidence sources share a budget, enforced here:
+// re-opening is free; a new source beyond the budget gets 409 { error: 'budget', remaining: 0 }.
+export const POST = withSession(async ({ id }, req) => {
   const body = (await req.json()) as { type?: string; section?: string; text?: string };
+  const s = getSession(id)!;
+  requireState(s.state, 'work');
   if (body.type === 'pack_open') {
-    if (!scenario.pack.some((p) => p.id === body.section)) return fail(400, 'Unknown section');
-    s.data.opens.push({ section: body.section!, ts: Date.now() });
+    const section = body.section ?? '';
+    if (!scenario.pack.some((p) => p.id === section)) return fail(400, 'Unknown section');
+    const budget = scenario.budget[s.mode];
+    const opened = openedEvidence(s.data.opens);
+    if (isEvidence(section) && !opened.includes(section) && opened.length >= budget) {
+      logEvent(s.id, 'budget_block', { section });
+      return json({ error: 'budget', remaining: 0 }, 409);
+    }
+    s.data.opens.push({ section, ts: Date.now() });
     saveSession(s);
-    logEvent(s.id, 'pack_open', { section: body.section });
-    return json({ ok: true });
+    logEvent(s.id, 'pack_open', { section });
+    const remaining = Math.max(0, budget - openedEvidence(s.data.opens).length);
+    return json({ ok: true, body: isEvidence(section) ? evidenceBody(section) : null, remaining });
   }
   if (body.type === 'draft') {
     if (typeof body.text !== 'string' || body.text.length > 6000) return fail(400, 'text must be a string under 6000 characters');

@@ -3,7 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { Mode, Observations, Session, SessionData, SessionState } from './types';
+import type { Mode, Observations, Result, Session, SessionData, SessionState } from './types';
 
 const g = globalThis as unknown as { __alcDb?: DatabaseSync };
 
@@ -72,33 +72,54 @@ export function sessionCounts() {
   return db().prepare('SELECT state, COUNT(*) AS n FROM sessions GROUP BY state').all() as { state: string; n: number }[];
 }
 
-/** Sessions that declined storage keep nothing but their scores once finished. */
-export function scrubIfNotStored(s: Session) {
-  if (s.store) return;
-  db().prepare("DELETE FROM events WHERE session_id = ? AND type IN ('chat_user','chat_assistant','draft_snapshot','submit','debrief')").run(s.id);
+/** Persist the result and clear non-consenting participants' own words in the same transaction. */
+export function finishSession(s: Session, result: Result) {
+  const database = db();
+  database.exec('BEGIN');
+  try {
+    if (!s.store) {
+      database.prepare("DELETE FROM events WHERE session_id = ? AND type IN ('chat_user','chat_assistant','draft_snapshot','submit','debrief','viva')").run(s.id);
+      s.data = { messages: [], turns: 0, namesSent: [], ghostwrite: false, queried: [], opens: [] };
+    }
+    s.data.result = result;
+    saveSession(s);
+    logEvent(s.id, 'scored', { incidents: result.incidents, discern: result.discern.type ?? result.discern.status, decide: result.decide.band ?? result.decide.status });
+    database.exec('COMMIT');
+  } catch (error) {
+    database.exec('ROLLBACK');
+    throw error;
+  }
 }
 
 /** Builds the scorer's input from server-side session state. */
-export function observe(s: Session): Observations {
+export function observe(s: Session, timeLimit: number): Observations {
   const start = s.startedAt ?? s.createdAt;
   const sec = (ts: number) => Math.max(0, (ts - start) / 1000);
   const d = s.data;
-  const openedAfterDraft: Record<string, number> = {};
-  for (const o of d.opens) {
-    if (d.draftShownAt && o.ts >= d.draftShownAt && openedAfterDraft[o.section] === undefined) openedAfterDraft[o.section] = sec(o.ts);
-  }
+  const openedAt: Record<string, number> = {};
+  for (const o of d.opens) if (openedAt[o.section] === undefined) openedAt[o.section] = sec(o.ts);
+  const queriedAt: Record<string, number> = {};
+  for (const [id, ts] of Object.entries(d.queriedAt ?? {})) queriedAt[id] = sec(ts);
   return {
     mode: s.mode,
-    firstInstruction: d.firstInstruction ?? '',
     brief: d.brief ?? '',
-    openedAfterDraft,
-    openedAfterTeammate: d.teammateAt ? [...new Set(d.opens.filter((o) => o.ts >= d.teammateAt!).map((o) => o.section))] : [],
-    teammateShown: !!d.teammateAt,
-    queried: d.queried,
+    firstInstruction: d.firstInstruction ?? '',
+    assistantReplies: d.messages.filter((m) => m.role === 'assistant' && m.scripted !== 'refusal').map((m) => m.text),
+    studentMessages: d.messages.filter((m) => m.role === 'user' && !!d.draftShownAt && m.ts >= d.draftShownAt).map((m) => m.text),
+    draftShown: !!d.draftShownAt,
     flagged: d.debrief?.flagged ?? [],
+    leastSure: d.debrief?.leastSure ?? [],
+    queried: d.queried,
+    queriedAt,
+    openedAt,
     confidence: d.debrief?.confidence ?? 0.5,
-    namesSentToAI: d.namesSent,
-    ghostwriteRequested: d.ghostwrite,
-    overtime: false,
+    declared: d.debrief?.declared ?? 'MINE',
+    namesToAI: d.namesSent,
+    ghostRequested: !!d.ghostRequested,
+    p2Shown: !!d.p2ShownAt,
+    p2Accepted: !!d.p2Accepted,
+    onTime: !d.submittedAt || sec(d.submittedAt) <= timeLimit + 5,
+    quoteText: s.store,
+    ...(d.viva?.answer !== undefined ? { viva: { kind: d.viva.kind, claimId: d.viva.claimId, question: d.viva.question, answer: d.viva.answer } } : {}),
   };
 }
