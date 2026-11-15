@@ -1,5 +1,17 @@
 # AI Literacy Check
 
+## How the pieces fit
+
+This project assesses how a student works with AI through three layers of evidence. Each shows something the others cannot.
+
+| Layer | What it shows | Status |
+|---|---|---|
+| Passive observation of a live conversation | How the student directs the assistant, traces evidence and explains choices | Current mode on `main` |
+| Embedded opportunities: the same pre-written content for every student, some of it wrong | Whether the student can tell right from wrong | Built as the controlled scenario (commit `e5580b4`, spec in `docs/01_scoring_spec.md`); not active in the current live mode |
+| Active probes, asked only where evidence is missing | Confidence and understanding, which leave no trace | Debrief on `main`; adaptive follow-up on `feat/adaptive-follow-up` |
+
+Model-assisted judgements are used only to describe one student's session back to them. Anything comparable between students must come from standardised content scored by rule. There is no overall score and no ranking. The reasoning, what the results can and cannot support, and the next steps are in [`docs/05_three_layer_framework.md`](docs/05_three_layer_framework.md).
+
 ## Current live-collaboration mode
 
 The assistant now has the full source pack, task requirements and anonymised comments. Every ordinary message, including the first, receives a live model response. The chat prompt is: “The assistant has all the sources and task requirements. Tell it what you want help with.”
@@ -12,7 +24,7 @@ Optional storage still controls whether student messages and free-text work are 
 
 ## Earlier controlled-scenario reference
 
-The sections below describe the earlier controlled prototype and its scoring specification. The current live mode above supersedes its scripted-chat and results behaviour. The installation commands remain applicable.
+The sections below describe the controlled scenario and its scoring specification. This is the embedded-opportunity layer described under "How the pieces fit". The current live mode does not run its scripted chat or show its results page. The installation commands remain applicable.
 
 A prototype for the Reply Student Tech Clash "AI on Campus" challenge (Track A, full-stack engineering).
 
