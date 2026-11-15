@@ -14,24 +14,24 @@ const DIRECT: [keyof Reveal['direct']['features'], string][] = [['topic', 'Topic
 const RATING = ['no reason given', 'general', 'specific'];
 const NOT_ENOUGH = 'Not enough evidence in this session';
 
-const FACTOR_COPY: Record<string, { supported?: string; practise?: string; insufficient: string; label?: string }> = {
+const FACTOR_COPY: Record<string, { supported?: string; practise?: string; insufficient: string }> = {
   direction: {
     supported: 'You asked the assistant for help with the task.',
-    insufficient: 'It’s unclear what help you asked for.', label: 'Task request unclear',
+    insufficient: 'It’s unclear what help you asked for.',
   },
   basis: {
     supported: 'You checked a claim and cited the sources for your figures.',
-    practise: 'We couldn’t see a source check for the AI material you used.',
-    insufficient: 'We couldn’t confirm how you checked your figures.', label: 'Source check unconfirmed',
+    practise: 'You used an AI answer. We saw no source check in this session.',
+    insufficient: 'We couldn’t confirm how you checked your figures.',
   },
   selection: {
     supported: 'You explained a choice you made in your brief.',
-    insufficient: 'Say what you kept, changed or skipped and why.', label: 'Choice and reason unclear',
+    insufficient: 'Say what you kept, changed or skipped and why.',
   },
   uncertainty: {
-    supported: 'Your brief explains what the data can and can’t show.',
-    practise: 'The quiz scores alone can’t tell us whether AI helped students learn.',
-    insufficient: 'It’s unclear what limits you see in the data.', label: 'Conclusion unclear',
+    supported: 'You explained why the quiz scores alone can’t show AI’s effect.',
+    practise: 'You said AI caused the difference in marks. The quiz only compared two groups.',
+    insufficient: 'It’s unclear what limits you see in the data.',
   },
   ownership: {
     practise: 'Some wording matches the AI reply. Check your declaration.',
@@ -39,7 +39,7 @@ const FACTOR_COPY: Record<string, { supported?: string; practise?: string; insuf
   },
   review: {
     supported: 'You explained what you did with the feedback.',
-    insufficient: 'We couldn’t confirm how you used the feedback.', label: 'Review follow-through unconfirmed',
+    insufficient: 'We couldn’t confirm how you used the feedback.',
   },
 };
 
@@ -74,7 +74,7 @@ export function RevealPage({ api }: { api: string }) {
           <strong>{checksMet}<small> / 5</small></strong><span>Brief checks met</span>
         </div>
         <div><p className="report-kicker">Session feedback</p><h1>{focus}</h1>
-          <p className="muted">{causalConcern ? 'Your brief attributes the difference in marks to AI. Students chose whether to use AI, and seminar attendance also differed.' : sourceConcern ? 'Your brief used material from an assistant reply without a source check identified in the activity.' : 'Explore the decisions and evidence from your briefing activity.'}</p>
+          <p className="muted">{causalConcern ? 'Your brief attributes the difference in marks to AI. Students chose whether to use AI, and seminar attendance also differed.' : sourceConcern ? 'You used an AI answer in your brief. We saw no source check in this session.' : 'Explore the decisions and evidence from your briefing activity.'}</p>
         </div>
       </header>
       {data.assessment?.status === 'unavailable' && <p role="status" className="notice">AI-assisted feedback is temporarily unavailable. Task-completion checks are shown below.</p>}
@@ -83,11 +83,11 @@ export function RevealPage({ api }: { api: string }) {
         const recorded = check.id === 'ownership' && check.status === 'insufficient' && data.assessment?.status === 'complete';
         const unavailable = data.assessment?.status === 'unavailable';
         const copy = FACTOR_COPY[check.id];
-        let label = copy?.label ?? 'Not enough evidence';
+        let label = 'Fair';
         if (recorded) label = 'Recorded';
         else if (unavailable) label = 'Feedback unavailable';
-        else if (check.status === 'supported') label = 'Evidence observed';
-        else if (check.status === 'practise') label = 'Needs work';
+        else if (check.status === 'supported') label = 'Great';
+        else if (check.status === 'practise') label = 'Need Work';
 
         const subtitle = unavailable ? 'We couldn’t assess this part of the session.'
           : copy?.[check.status] ?? check.evidence;
@@ -98,7 +98,7 @@ export function RevealPage({ api }: { api: string }) {
           <details className="report-factor" key={check.id}>
             <summary>
               <span>{check.title}{subtitle && <small className="factor-subtitle">{subtitle}</small>}</span>
-              <span className={`factor-status ${check.status}`}>{label}</span>
+              <span className={`factor-status ${recorded || unavailable ? 'neutral' : check.status}`}>{label}</span>
             </summary>
             <div className="factor-detail">{references && <p>{references}</p>}{partialEvidence && <p>{check.evidence}</p>}
               <h3>How this is judged</h3><p>{check.criterion}</p>

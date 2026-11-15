@@ -15,7 +15,7 @@ export type View = {
   claims: { id: string; text: string }[];
   draftShownAt: number | null; offerShown: boolean;
   opened: Record<string, string>; remaining: number;
-  adaptive: { status: AdaptiveFlow['status']; round: number; turnId: number | null; support: SupportLevel | null; question: string | null; sources: { title: string; body: string }[] } | null;
+  adaptive: { teacherAvailable: boolean; status: AdaptiveFlow['status']; round: number; turnId: number | null; support: SupportLevel | null; question: string | null; sources: { title: string; body: string }[] } | null;
   guideOnly: boolean; viva: { question: string } | null; liveModel: boolean;
 };
 export type Reveal = Omit<Result, 'discern' | 'decide'> & {

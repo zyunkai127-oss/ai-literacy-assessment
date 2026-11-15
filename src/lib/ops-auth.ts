@@ -5,6 +5,7 @@ const equal = (a: string, b: string) => {
   return x.length === y.length && timingSafeEqual(x, y);
 };
 const key = () => process.env.OPS_REVIEW_KEY?.trim() ?? '';
+export const teacherReviewConfigured = () => Boolean(key());
 const sign = (expires: string) => createHmac('sha256', key()).update(`teacher-review:${expires}`).digest('hex');
 export function correctReviewKey(value: unknown): boolean {
   return !!key() && typeof value === 'string' && value.length <= 200 && equal(value, key());

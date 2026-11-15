@@ -168,7 +168,8 @@ function AdaptiveViva({ view, api, onDone }: { view: View; api: string; onDone: 
       <button className="primary" disabled={busy || !answer.trim()} onClick={() => send()}>{busy ? 'Preparing the next step…' : 'Send answer'}</button>
     </div>}
     {f.status === 'asking' && <details className="card"><summary>Your brief and source pack</summary><h3>Your submitted brief</h3><p>{view.brief}</p>{f.sources.map(source => <section key={source.title}><h3>{source.title}</h3><p style={{ whiteSpace: 'pre-wrap' }}>{source.body}</p></section>)}</details>}
-    {f.status === 'review' && <p role="status">A teacher will review the evidence and decide the next step. You can return using this same link.</p>}
+    {f.status === 'review' && !f.teacherAvailable && <div className="card"><p>Teacher review is unavailable. You can see the feedback from your completed work.</p><button disabled={busy} onClick={() => send('finish')}>See available feedback</button></div>}
+    {f.status === 'review' && f.teacherAvailable && <p role="status">A teacher will review the evidence and decide the next step. You can return using this same link.</p>}
     {f.status === 'preparing' && <div className="card"><p role="status">Preparing your next step. Your submitted answer is saved.</p><button disabled={busy} onClick={() => send('retry')}>{busy ? 'Preparing…' : 'Resume interrupted step'}</button></div>}
     {f.status === 'unavailable' && <div className="card"><p role="status">The AI service could not complete this step. Your submitted answers are saved.</p><div className="row"><button disabled={busy} onClick={() => send('retry')}>{busy ? 'Preparing…' : 'Retry follow-up'}</button><button disabled={busy} onClick={() => send('finish')}>See available feedback</button></div></div>}
     {error && <p className="error" role="alert">{error}</p>}

@@ -54,7 +54,7 @@ export function TeacherReview() {
       <div className="card"><h3>Synthetic system evaluation</h3><p>12 scenarios × 3 wordings. Expected labels are provisional and require expert validation.</p><button disabled={benchmark.busy} onClick={runBenchmark}>{benchmark.busy ? 'Running benchmark…' : 'Run 36-case benchmark'}</button>{benchmark.total > 0 && <p role="status">{benchmark.done} / {benchmark.total} completed · {benchmark.matches} verified matches · {benchmark.unavailable} unavailable</p>}</div>
       <p className="muted">{reviews.length} sessions awaiting a human decision. Core feedback is preserved.</p>
       <details className="card"><summary>Source pack for verification</summary>{sources.map(s => <section key={s.title}><h3>{s.title}</h3><p className="body">{s.body}</p></section>)}</details>
-      {reviews.map(r => <ReviewCard key={r.id} review={r} onDone={load} />)}
+      {reviews.map(r => <ReviewCard key={`${r.id}:${r.turns.length}`} review={r} onDone={load} />)}
     </>}
     {error && <p className="error" role="alert">{error}</p>}
   </section>;
@@ -67,7 +67,7 @@ function ReviewCard({ review, onDone }: { review: Review; onDone: () => void }) 
   async function apply() {
     setBusy(true); setError('');
     try {
-      const res = await fetch(`/api/ops/reviews/${review.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: next === 'finish' ? 'finish' : 'ask', questionId: next === 'finish' ? '' : next, outcome }) });
+      const res = await fetch(`/api/ops/reviews/${review.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ round: review.turns.length, action: next === 'finish' ? 'finish' : 'ask', questionId: next === 'finish' ? '' : next, outcome }) });
       if (!res.ok) throw new Error((await res.json()).error);
       onDone();
     } catch (e) { setError(e instanceof Error ? e.message : 'Review could not be saved.'); setBusy(false); }

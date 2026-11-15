@@ -185,7 +185,8 @@ label.choice.on { box-shadow: inset 0 0 0 1px var(--accent); }
 .report-factor[open] summary::after { transform: rotate(90deg); }
 .factor-status { font-size: 12px; font-weight: 600; padding: 4px 9px; border-radius: 5px; color: #4e5961; background: #eef1f3; }
 .factor-status.supported { background: #e6f3e7; color: #286043; }
-.factor-status.practise { background: #ffebe4; color: #9b351d; }
+.factor-status.insufficient { background: #fff1cd; color: #795200; }
+.factor-status.practise { background: #ffebe8; color: #a22924; }
 .factor-subtitle { display: block; margin-top: 3px; font-size: 14px; font-weight: 400; color: var(--muted); }
 .factor-detail { max-width: 66ch; padding: 0 0 16px; color: var(--muted); }
 .factor-detail h3 { color: var(--ink); font-size: 14px; }
