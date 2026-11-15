@@ -33,3 +33,8 @@ export function draftText(mode: Mode) {
 }
 
 export const isGreeting = (text: string) => /^(?:hi|hello|hey|good (?:morning|afternoon|evening)|你好|嗨)[!！.,，。\s]*$/i.test(text.trim());
+
+/** Evidence sections this session has opened, in order, without repeats. */
+export function openedEvidence(opens: { section: string }[]): string[] {
+  return [...new Set(opens.map((o) => o.section).filter(isEvidence))];
+}
