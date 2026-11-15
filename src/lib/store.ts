@@ -1,4 +1,5 @@
 // SQLite persistence: sessions and an append-only event log. Uses Node's built-in sqlite (Node 22.13+).
+import { reviewFollowThrough } from './collaboration';
 import type { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
@@ -101,11 +102,13 @@ export function observe(s: Session, timeLimit: number): Observations {
   const queriedAt: Record<string, number> = {};
   for (const [id, ts] of Object.entries(d.queriedAt ?? {})) queriedAt[id] = sec(ts);
   return {
+    conversation: d.messages.filter((m) => !m.blocked),
+    reviewFollowedThrough: reviewFollowThrough(d.messages),
     mode: s.mode,
     brief: d.brief ?? '',
     firstInstruction: d.firstInstruction ?? '',
     assistantReplies: d.messages.filter((m) => m.role === 'assistant' && m.scripted !== 'refusal').map((m) => m.text),
-    studentMessages: d.messages.filter((m) => m.role === 'user' && !!d.draftShownAt && m.ts >= d.draftShownAt).map((m) => m.text),
+    studentMessages: d.messages.filter((m) => m.role === 'user' && !m.blocked).map((m) => m.text),
     draftShown: !!d.draftShownAt,
     flagged: d.debrief?.flagged ?? [],
     leastSure: d.debrief?.leastSure ?? [],
@@ -118,6 +121,7 @@ export function observe(s: Session, timeLimit: number): Observations {
     ghostRequested: !!d.ghostRequested,
     p2Shown: !!d.p2ShownAt,
     p2Accepted: !!d.p2Accepted,
+    offerParagraph: d.messages.find((m) => m.scripted === 'ghost')?.text,
     onTime: !d.submittedAt || sec(d.submittedAt) <= timeLimit + 5,
     quoteText: s.store,
     ...(d.viva?.answer !== undefined ? { viva: { kind: d.viva.kind, claimId: d.viva.claimId, question: d.viva.question, answer: d.viva.answer } } : {}),

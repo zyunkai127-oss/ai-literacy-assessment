@@ -1,4 +1,7 @@
 'use client';
+import { Restart } from './Restart';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { countWords, errorOf, mmss, post, type PublicMsg, type View } from './shared';
 
@@ -7,6 +10,27 @@ const NOTICE: Record<string, string> = {
   injection: 'That message was not sent to the assistant. It cannot discuss how this activity is set up.',
   ghostwrite: 'The final paragraph has to be in your own words, so the assistant will now guide rather than write.',
 };
+
+/** Source text with simple tables: consecutive lines containing " | " become a table whose first row is the header. */
+function PackBody({ text }: { text: string }) {
+  const blocks: { table: boolean; lines: string[] }[] = [];
+  for (const line of text.split('\n')) {
+    const table = line.includes(' | ');
+    const last = blocks[blocks.length - 1];
+    if (last && last.table === table) last.lines.push(line);
+    else blocks.push({ table, lines: [line] });
+  }
+  return (
+    <div className="body">
+      {blocks.map((block, i) => block.table ? (
+        <table key={i} className="packtable">
+          <thead><tr>{block.lines[0].split(' | ').map((cell, j) => <th key={j}>{cell}</th>)}</tr></thead>
+          <tbody>{block.lines.slice(1).map((row, r) => <tr key={r}>{row.split(' | ').map((cell, j) => <td key={j}>{cell}</td>)}</tr>)}</tbody>
+        </table>
+      ) : <div key={i}>{block.lines.join('\n')}</div>)}
+    </div>
+  );
+}
 
 export function Work({ view, api, onDone }: { view: View; api: string; onDone: () => void }) {
   const { scenario } = view;
@@ -22,16 +46,11 @@ export function Work({ view, api, onDone }: { view: View; api: string; onDone: (
   const [submitting, setSubmitting] = useState(false);
   const [opened, setOpened] = useState<Record<string, string>>(view.opened);
   const [remaining, setRemaining] = useState(view.remaining);
-  const [opening, setOpening] = useState<string | null>(null);
-  const [draftShownAt, setDraftShownAt] = useState<number | null>(view.draftShownAt);
-  const [offerShown, setOfferShown] = useState(view.offerShown);
   const events = useRef(Promise.resolve());
   const savedBrief = useRef(view.brief);
   const offset = useRef(view.serverNow - Date.now());
   const endRef = useRef<HTMLDivElement>(null);
   const busy = streaming !== null;
-  const busyRef = useRef(false);
-  busyRef.current = busy;
 
   useEffect(() => {
     const tick = () => setLeft(scenario.timeLimit - (Date.now() + offset.current - (view.startedAt ?? Date.now())) / 1000);
@@ -59,36 +78,8 @@ export function Work({ view, api, onDone }: { view: View; api: string; onDone: (
     return () => clearTimeout(t);
   }, [brief, record, submitting]);
 
-  // The assistant's timed offer arrives a set time after its summary. The server decides when it is due and delivers it once.
-  useEffect(() => {
-    if (!draftShownAt || offerShown || submitting) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const attempt = async () => {
-      if (cancelled) return;
-      if (busyRef.current) { timer = setTimeout(attempt, 1500); return; }
-      try {
-        const res = await post(`${api}/scripted`);
-        if (cancelled) return;
-        if (res.ok) {
-          const body = (await res.json()) as { messages: PublicMsg[]; retryInMs?: number };
-          if (body.messages.length) { setMessages((m) => [...m, ...body.messages]); setOfferShown(true); return; }
-          if (body.retryInMs === undefined) return;
-          timer = setTimeout(attempt, Math.max(1000, body.retryInMs - 1000));
-        } else if (res.status === 409) {
-          const message = await errorOf(res, '');
-          if (/still replying/.test(message)) timer = setTimeout(attempt, 1500);
-        }
-      } catch { timer = setTimeout(attempt, 3000); }
-    };
-    const dueIn = draftShownAt + scenario.offerDelay * 1000 - (Date.now() + offset.current);
-    timer = setTimeout(attempt, Math.max(0, dueIn - 1000));
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [api, draftShownAt, offerShown, submitting, scenario.offerDelay]);
-
   async function openSource(section: string) {
-    if (opening) return;
-    setOpening(section);
+    // Sources can be opened in any order and at the same time: there is no reading limit.
     setError('');
     try {
       const res = await post(`${api}/event`, { type: 'pack_open', section });
@@ -99,7 +90,6 @@ export function Work({ view, api, onDone }: { view: View; api: string; onDone: (
     } catch {
       setError('That source could not be opened.');
     }
-    setOpening(null);
   }
 
   async function send() {
@@ -137,7 +127,6 @@ export function Work({ view, api, onDone }: { view: View; api: string; onDone: (
           else if (ev.type === 'error') setChatError(ev.message);
           else if (ev.type === 'message') {
             final = ev.message as PublicMsg;
-            if (ev.draftShownAt) setDraftShownAt(ev.draftShownAt);
             if (ev.guideOnly) setGuideOnly(true);
           }
         }
@@ -170,7 +159,7 @@ export function Work({ view, api, onDone }: { view: View; api: string; onDone: (
   return (
     <div className="work">
       <div className="topbar">
-        <b>{scenario.task.title}</b>
+        <span className="title"><b>{scenario.task.title}</b><Restart /></span>
         <span className="muted small">{left <= 0 ? 'Time is up. Submit your brief now.' : 'Time left'}</span>
         <span className={`timer ${left < 60 ? 'low' : ''}`}>{mmss(Math.max(0, left))}</span>
       </div>
@@ -182,31 +171,21 @@ export function Work({ view, api, onDone }: { view: View; api: string; onDone: (
               <summary>Project requirements</summary>
               <div className="body">{scenario.task.prompt}{'\n\n'}{scenario.task.requirements.map((r) => `• ${r}`).join('\n')}</div>
             </details>
-            <p className="notice budget">{scenario.budgetNote}</p>
             {scenario.pack.map((item) => {
               if (!item.locked) {
                 return (
                   <details key={item.id} onToggle={(event) => { if (event.currentTarget.open) record({ type: 'pack_open', section: item.id }); }}>
                     <summary>{item.title}</summary>
-                    <div className="body">{item.body}</div>
+                    <PackBody text={item.body ?? ''} />
                   </details>
                 );
               }
-              if (opened[item.id] !== undefined) {
-                return (
-                  <details key={item.id} open>
-                    <summary>{item.title}</summary>
-                    <div className="body">{opened[item.id]}</div>
-                  </details>
-                );
-              }
+              // Evidence sources: the text is fetched from the server the first time the section is opened, which also logs the open.
               return (
-                <div key={item.id} className="locked">
-                  <span>{item.title}</span>
-                  {remaining > 0
-                    ? <button className="small" disabled={submitting || opening !== null} onClick={() => openSource(item.id)}>Open source ({remaining} of {scenario.budget} left)</button>
-                    : <span className="muted small">No time left to read this source</span>}
-                </div>
+                <details key={item.id} onToggle={(event) => { if (event.currentTarget.open && opened[item.id] === undefined) openSource(item.id); }}>
+                  <summary>{item.title}</summary>
+                  {opened[item.id] !== undefined ? <PackBody text={opened[item.id]} /> : <div className="body muted">Loading</div>}
+                </details>
               );
             })}
           </div>
@@ -215,24 +194,24 @@ export function Work({ view, api, onDone }: { view: View; api: string; onDone: (
         <section className="col">
           <h2>AI Chat</h2>
           <div className="scroll" aria-live="polite">
-            {messages.length === 0 && !busy && <p className="muted">Tell the assistant what you need for the briefing.</p>}
+            {messages.length === 0 && !busy && <p className="muted">The assistant has all the sources and task requirements. Tell it what you want help with.</p>}
             {messages.map((m, i) => {
               const [intro, , outro] = m.claims ? m.text.split('\n\n') : [m.text];
               return (
                 <div key={i} className={`msg ${m.role}`}>
                   <div className="who">{m.role === 'user' ? 'You' : 'Assistant'}</div>
-                  <div className="bubble">{intro}</div>
+                  <div className={`bubble ${m.role === 'assistant' ? 'markdown' : ''}`}>{m.role === 'assistant' ? <Markdown remarkPlugins={[remarkGfm]}>{intro}</Markdown> : intro}</div>
                   {m.claims?.map((c) => (
                     <div key={c.id} className="claim">
                       <span>{c.text}</span>
                       <button className="small" disabled={submitting || brief.length + c.text.length + 1 > 6000} onClick={() => insert(c.text)}>Insert</button>
                     </div>
                   ))}
-                  {m.claims && outro && <div className="bubble" style={{ marginTop: 6 }}>{outro}</div>}
+                  {m.claims && outro && <div className="bubble markdown" style={{ marginTop: 6 }}><Markdown remarkPlugins={[remarkGfm]}>{outro}</Markdown></div>}
                 </div>
               );
             })}
-            {busy && <div className="msg assistant"><div className="who">Assistant</div><div className="bubble">{streaming || '…'}</div></div>}
+            {busy && <div className="msg assistant"><div className="who">Assistant</div><div className="bubble markdown"><Markdown remarkPlugins={[remarkGfm]}>{streaming || '…'}</Markdown></div></div>}
             {notices.filter((n) => NOTICE[n]).map((n) => <div key={n}><span className="notice">{NOTICE[n]}</span></div>)}
             <div ref={endRef} />
           </div>

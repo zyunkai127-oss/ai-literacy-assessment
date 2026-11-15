@@ -30,6 +30,33 @@ export function RevealPage({ api }: { api: string }) {
   if (error) return <main className="wrap"><p role="alert" className="error">{error}</p></main>;
   if (!data) return <main className="wrap"><p className="muted">Loading results</p></main>;
 
+  if (data.collaboration) return (
+    <main className="wrap">
+      <h1>How you worked with the assistant</h1>
+      <p className="muted">AI-assisted feedback on this session, with no overall score or ranking. Missing evidence does not mean missing ability.</p>
+      {data.assessment?.status === 'unavailable' && <p role="status" className="notice">AI-assisted feedback is temporarily unavailable. Task-completion checks are shown below.</p>}
+      {data.collaboration.map((check) => (
+        <section className="card" key={check.id}>
+          <h2>{check.title}</h2>
+          <p><span className={`pill ${check.status === 'supported' ? 's2' : check.status === 'practise' ? 's1' : ''}`}>{check.status === 'supported' ? 'Evidence observed' : check.status === 'practise' ? 'Worth reflecting on' : 'Not enough evidence'}</span></p>
+          <p>{check.evidence}</p>
+          <details><summary>How this is judged</summary><p className="body">{check.criterion}</p></details>
+          {check.status !== 'supported' && <p className="muted">{check.next}</p>}
+        </section>
+      ))}
+      <section className="card">
+        <h2>The brief itself</h2>
+        <p><Mark ok={data.quality.validPoints >= 2} /> At least 2 recognised data points ({data.quality.validPoints} found)</p>
+        <p><Mark ok={data.quality.sourced} /> Each recognised data point names its source</p>
+        <p><Mark ok={data.quality.hasView} /> A student view from the survey comments</p>
+        <p><Mark ok={data.quality.wordsOK} /> 80–150 words ({data.quality.words})</p>
+        <p><Mark ok={data.quality.onTime} /> Submitted on time</p>
+        <p className="muted small">These are task-completion checks, not a measure of AI literacy or a full fact-check.</p>
+      </section>
+      <a href="/">Start a new session</a>
+    </main>
+  );
+
   const { headline, discern, decide, own, direct, quality } = data;
   const wrongSeen = discern.hits + discern.misses;
   const rightSeen = discern.fas + discern.crs;
@@ -58,7 +85,7 @@ export function RevealPage({ api }: { api: string }) {
               <>
                 <p><span className="pill s1 type">{discern.label}</span></p>
                 <p>{discern.meaning}</p>
-                <p className="muted small">You caught {discern.hits} of {wrongSeen} wrong statements and doubted {discern.fas} of {rightSeen} correct ones. Statements you neither used nor commented on are not counted.</p>
+                <p className="muted small">You questioned, rejected or corrected {discern.hits} of {wrongSeen} wrong statements and rejected {discern.fas} of {rightSeen} correct ones. Statements you neither used nor commented on are not counted.</p>
               </>
             ) : (
               <>
@@ -97,7 +124,13 @@ export function RevealPage({ api }: { api: string }) {
             {own.checks.map((check) => (
               <p key={check.id} className="small"><Mark ok={check.ok} /> <b>{check.title}</b>{check.ok === null ? ' (not observed)' : ''}<br /><span className="muted">{check.evidence}</span></p>
             ))}
-            {own.viva && <p className="small"><b>Your explanation:</b> {RATING[own.viva.rating]}<br /><span className="muted">{own.viva.question}</span></p>}
+            {own.viva && <p className="small"><b>Your explanation:</b> {RATING[own.viva.rating]}<br /><span className="muted">Follow-up question: {own.viva.question}</span><br /><span className="muted">{own.viva.rating === 2
+              ? 'Your answer names a detail or source relevant to this statement. This describes the specificity of your reason; accuracy is reviewed above.'
+              : own.viva.rating === 1
+                ? own.viva.kind === 'generic'
+                  ? 'Your answer gives a reason. This broad follow-up is reported as general because it is not tied to a particular statement.'
+                  : 'Your answer gives a reason, but no statement-specific detail or source was recognised. Naming the figure, document or method you relied on can make the basis clearer.'
+                : 'No reason was recognised. Explain what you based your decision on in a sentence, referring to a detail or source where possible.'}</span></p>}
           </div>
 
           <div className="dim">

@@ -39,7 +39,7 @@ export interface Scenario {
   names: string[]; view_markers: string[]; source_markers: string[];
   draft_intro: string; draft_outro: string;
   claims: Claim[];
-  ghostwrite_offer: { text: string; delay_s: Record<Mode, number> };
+  ghostwrite_offer: { text: string; paragraph: string; delay_s: Record<Mode, number> };
   accept_markers: string[];
   thresholds: Thresholds;
   advice: Record<string, string>;
@@ -47,11 +47,12 @@ export interface Scenario {
 }
 
 export interface Msg {
+  failed?: boolean;
   role: 'user' | 'assistant';
   text: string;
   ts: number;
   claims?: { id: string; text: string }[];
-  scripted?: 'draft' | 'reask' | 'offer' | 'refusal' | 'greeting' | 'guide';
+  scripted?: 'draft' | 'reask' | 'offer' | 'refusal' | 'greeting' | 'guide' | 'ghost';
   /** Blocked by the injection guardrail: stored for the record, never sent to the model. */
   blocked?: boolean;
 }
@@ -88,6 +89,8 @@ export interface Session {
 
 /** The scorer's only input. Times are seconds since the clock started. */
 export interface Observations {
+  conversation?: Msg[];
+  reviewFollowedThrough?: boolean;
   mode: Mode;
   brief: string;
   firstInstruction: string;
@@ -107,6 +110,8 @@ export interface Observations {
   ghostRequested: boolean;
   p2Shown: boolean;
   p2Accepted: boolean;
+  /** The paragraph the assistant wrote after its offer was accepted, if it did. */
+  offerParagraph?: string;
   onTime: boolean;
   /** Quote the student's own words in feedback only when they agreed to storage. */
   quoteText: boolean;
@@ -128,7 +133,18 @@ export interface ClaimReview extends ClaimCode {
   title: string; text: string; flawed: boolean; criterion: string; evidence: string; reveal: string; advice: string;
 }
 
+export interface CollaborationCheck {
+  id: string;
+  title: string;
+  status: 'supported' | 'practise' | 'insufficient';
+  evidence: string;
+  criterion: string;
+  next: string;
+}
+
 export interface Result {
+  assessment?: { status: 'complete' | 'unavailable' };
+  collaboration?: CollaborationCheck[];
   headline: { kind: Incident | 'best_call' | 'none'; claimId: string | null; happened: string; means: string; next: string };
   discern: { status: 'ok' | 'insufficient'; type?: DiscernType; label?: string; meaning?: string; H?: number; F?: number; hits: number; misses: number; fas: number; crs: number };
   decide: { status: 'ok' | 'insufficient'; band?: Band; mean?: number; ci?: [number, number]; wide?: boolean; capped?: boolean; items: DecideItem[] };

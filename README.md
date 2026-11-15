@@ -1,5 +1,19 @@
 # AI Literacy Check
 
+## Current live-collaboration mode
+
+The assistant now has the full source pack, task requirements and anonymised comments. Every ordinary message, including the first, receives a live model response. The chat prompt is: “The assistant has all the sources and task requirements. Tell it what you want help with.”
+
+Automatic research summaries, planted-error stand-by replies and timed ghost-writing offers are disabled. Requests for the finished paragraph still receive guidance, and the privacy and prompt-injection guardrails remain active. Live chat requires the configured API credentials.
+
+After submission, students report confidence and authorship. The full version adds one reflective follow-up. Results show six AI-assisted observations: directing the assistant, tracing evidence, explaining choices, calibrating conclusions, describing AI contribution and following through on review. Each shows observed evidence, a reflection point or insufficient evidence, with its criterion. There is no total score or ranking. Task-completion checks remain separate. Message counts and source opens do not earn positive feedback. The assessor reviews meaning and context and returns structured message references; the server validates references, reply order and task-completion requirements. Failed or malformed assessments are shown as unavailable, without substituting keyword judgements. These observations are prototype feedback, not validated measures of ability.
+
+Optional storage still controls whether student messages and free-text work are retained after completion. Existing completed results are snapshots of the version used at the time.
+
+## Earlier controlled-scenario reference
+
+The sections below describe the earlier controlled prototype and its scoring specification. The current live mode above supersedes its scripted-chat and results behaviour. The installation commands remain applicable.
+
 A prototype for the Reply Student Tech Clash "AI on Campus" challenge (Track A, full-stack engineering).
 
 ## The problem
@@ -13,8 +27,8 @@ A student completes one small, timed piece of work with an AI research assistant
 - **The first task instruction returns a pre-written research summary.** Its statements are listed one by one with Insert buttons. Three are wrong (an altered figure, an invented reference, a causal claim the data cannot support) and the rest are correct, including one that looks suspicious but is right. Every student sees the same statements.
 - **Doubting a specific statement gets a pre-written reply in which the assistant stands by it**, right or wrong.
 - **Everything else is free chat with a live model.** The model sees the task, the anonymised survey comments and the summary it "wrote". It does not see the three evidence sources, so asking it is not a free way to verify.
-- **Reading is limited.** Only two of the three evidence sources can be opened, so the student has to choose what to check.
-- **Later the assistant offers to write the final paragraph**, which the assignment does not allow.
+- **All three evidence sources can be read.** They are written as documents (a survey report, a quiz note with a method note, a reading list), so checking a statement means finding it. Which sources were opened, and when, is logged.
+- **Later the assistant offers to write the final paragraph**, which the assignment does not allow. If the student accepts, it does write one: a pre-written paragraph built from its own summary, wrong statements included. What counts is whether that wording is handed in, not whether the student said yes.
 - After submitting, a **one-screen debrief** asks, for each statement, Relied on it / Not sure / Didn't rely on it (at most two "Not sure"), overall confidence, and who wrote most of the wording. The full version adds one follow-up question chosen from those answers.
 
 The summary, the stand-by replies and the offer need no API key, so the whole measurement runs offline. Only free chat needs the live model.
@@ -87,7 +101,7 @@ docs/                     scoring spec, model rationale, refactor guide, merge d
 | `GET /api/sessions/:id` | Session as the browser may see it: messages, statements once the summary has appeared, opened evidence, remaining budget, the follow-up question when in `viva` |
 | `POST /api/sessions/:id/start` | Start the clock |
 | `POST /api/sessions/:id/chat` | Send a message. Responds with a server-sent event stream (`guardrail`, `delta`, `message`, `error`, `done`). Returns 503 only when the message needs free chat and no model is configured |
-| `POST /api/sessions/:id/event` | `pack_open` returns `{ok, body, remaining}`; a new evidence source beyond the budget returns 409 `{error: "budget", remaining: 0}`. `draft` stores an editor snapshot |
+| `POST /api/sessions/:id/event` | `pack_open` returns `{ok, body, remaining}`; the budget is currently set to all three sources, so nothing is blocked; a lower `budget` in `data/scenario.json` would return 409 `{error: "budget", remaining: 0}`. `draft` stores an editor snapshot |
 | `POST /api/sessions/:id/scripted` | Delivers the assistant's timed offer once, when due |
 | `POST /api/sessions/:id/submit` | Submit the brief. Moves to `debrief` |
 | `POST /api/sessions/:id/debrief` | Body: `{decisions: {claimId: "relied" \| "unsure" \| "not"}, confidence: 0-100, declared: "MINE" \| "MIXED" \| "AI"}`. Quick version: scores and moves to `reveal`. Full version: returns the follow-up question and moves to `viva` |
@@ -103,7 +117,7 @@ All three run in code before anything reaches the model, and each changes what t
 |---|---|---|
 | Personal data | Classmate names, email addresses, phone numbers in a message | Redacted before storage and transmission; the student is told. The survey comments in the system prompt are anonymised too |
 | Prompt injection | Requests for the system prompt, answer key, marking rules, or to ignore instructions | Fixed refusal. The message is never sent to the model, including as later history |
-| Ghost-writing | Asking for the finished brief, or accepting the assistant's offer to write it | The assistant declines and stays in guide-only mode for the rest of the session |
+| Ghost-writing | The student asks, unprompted, for the finished brief | The assistant declines and stays in guide-only mode for the rest of the session. (Accepting the assistant's own timed offer is different: it writes a pre-written paragraph, and the results compare the submitted brief with it) |
 
 The model is also told to reply in 30 words or fewer when under a minute is left.
 
@@ -147,7 +161,7 @@ All scenario content was generated quickly and is marked `needs_review: true` in
 5. **Stand-by replies** (`reask_text`): each should defend its statement without adding any new figure.
 6. **Marker patterns** (`error_markers`, `fixed_markers`, `keep_markers`, `ask_markers`, `basis_markers`, `accept_markers`, and the data-point patterns in `scoring.ts`): try several natural rewordings of each statement and confirm they are detected.
 7. **Reveal and advice wording** for tone, including the `advice` and `reveal` dictionaries.
-8. **Thresholds and timings**: `thresholds`, `budget`, `time_limit_s` and `ghostwrite_offer.delay_s`.
+8. **Thresholds and timings**: `thresholds`, `budget`, `time_limit_s` and `ghostwrite_offer.delay_s`. Also the pre-written paragraph in `ghostwrite_offer.paragraph`.
 9. **The live model's system prompt** in `src/lib/llm.ts`: try asking it to verify each figure and confirm it sends the student to the source pack.
 
 ## Contributing

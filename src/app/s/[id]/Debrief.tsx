@@ -1,4 +1,5 @@
 'use client';
+import { Restart } from './Restart';
 import { useState } from 'react';
 import type { Decision, Declared } from '@/lib/types';
 import { errorOf, post, type View } from './shared';
@@ -44,6 +45,7 @@ function Questions({ view, api, onDone }: { view: View; api: string; onDone: () 
 
   return (
     <main className="wrap">
+      <p className="backlink"><Restart /></p>
       <h1>Your supervisor has a few questions</h1>
       <p className="muted">Brief submitted. This takes about 20 seconds.</p>
 
@@ -94,7 +96,7 @@ function Questions({ view, api, onDone }: { view: View; api: string; onDone: () 
         </div>
       </div>
 
-      <button className="primary" disabled={!complete || busy} onClick={submit}>{busy ? 'Saving…' : view.mode === 'full' ? 'Continue' : 'See my results'}</button>
+      <button className="primary" disabled={!complete || busy} onClick={submit}>{busy ? (view.mode === 'full' ? 'Saving…' : 'Preparing feedback…') : view.mode === 'full' ? 'Continue' : 'See my results'}</button>
       {error && <p role="alert" className="error">{error}</p>}
     </main>
   );
@@ -121,13 +123,14 @@ function Viva({ view, api, onDone }: { view: View; api: string; onDone: () => vo
 
   return (
     <main className="wrap">
+      <p className="backlink"><Restart /></p>
       <h1>One follow-up question</h1>
       <div className="card">
-        <p><b>{view.viva?.question ?? 'How did you decide what to keep from the assistant’s summary?'}</b></p>
+        <p><b>{view.viva?.question ?? 'How did you decide what to keep from the assistant’s advice?'}</b></p>
         <textarea aria-label="Your answer" rows={5} maxLength={1000} disabled={busy} value={answer} placeholder="A sentence or two is enough." onChange={(e) => setAnswer(e.target.value)} />
         <p className="muted small">{answer.length} / 1000 characters</p>
       </div>
-      <button className="primary" disabled={busy || !answer.trim()} onClick={submit}>{busy ? 'Saving…' : 'See my results'}</button>
+      <button className="primary" disabled={busy || !answer.trim()} onClick={submit}>{busy ? 'Preparing feedback…' : 'See my results'}</button>
       {error && <p role="alert" className="error">{error}</p>}
     </main>
   );

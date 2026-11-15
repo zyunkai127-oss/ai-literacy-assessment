@@ -59,7 +59,7 @@ const QUIZ = /\bquiz\b/i;
 const METHOD = /\b(quiz|method note)\b/i;
 
 export const FACTS = [
-  { label: 'survey response count or rate', source: SURVEY, context: /respond|respons|enrolled|answered/i, marker: /\b48\s*(?:of|out of|\/)\s*(?:the )?120\b|\b40\s?(?:%|per ?cent\b)/i },
+  { label: 'survey response count or rate', source: SURVEY, context: /respond|respons|enrolled|answered/i, marker: /\b48\s*(?:of|out of|\/)\s*(?:the )?120\b|\b48\s+(?:survey\s+)?responses?\s+from\s+(?:the\s+)?120\s+(?:enrolled\s+)?students\b|\b40\s?(?:%|per ?cent\b)/i },
   { label: 'weekly AI use', source: SURVEY, context: /week(?:ly|\b)|regularly/i, marker: /\b27\s*(?:of|out of|\/)\s*(?:the )?48\b|\b56\s?(?:%|per ?cent\b)/i },
   { label: 'weekly users asking for explanations', source: SURVEY, context: /explain|explanation/i, marker: /\b19\s*(?:of|out of|\/)\s*(?:the )?27\b|\b70\s?(?:%|per ?cent\b)/i },
   { label: 'weekly users asking for answers', source: SURVEY, context: /answers?/i, marker: /\b8\s*(?:of|out of|\/)\s*(?:the )?27\b|\b8\s+(?:mainly\s+)?(?:ask|asked)\s+(?:the AI\s+)?for answers\b/i },
@@ -203,6 +203,11 @@ export function decide(s: Scenario, o: Observations, codes: ClaimCode[], t: Thre
   return { status: 'ok', band, mean, ci, wide: ci[1] - ci[0] > t.WIDE_CI, capped, items };
 }
 
+/** Share of the brief's wording that matches the paragraph the assistant wrote after its offer was accepted. */
+export const offerOverlap = (o: Observations) => (o.p2Accepted && o.offerParagraph ? overlap(o.brief, o.offerParagraph) : 0);
+/** Accepting the offer only counts against the student when that wording ends up in the submitted brief. */
+export const usedOfferParagraph = (o: Observations, t: Thresholds) => o.p2Accepted && (!o.offerParagraph || offerOverlap(o) >= t.OVERLAP_MIXED);
+
 // ---------- 8. incidents ----------
 
 export function incidents(s: Scenario, o: Observations, codes: ClaimCode[], t: Thresholds) {
@@ -212,7 +217,7 @@ export function incidents(s: Scenario, o: Observations, codes: ClaimCode[], t: T
   const list: Incident[] = [];
   if (e1) list.push('E1');
   if (leaked >= 2) list.push('E2');
-  if (o.p2Accepted) list.push('E3');
+  if (usedOfferParagraph(o, t)) list.push('E3');
   return { list, e1, leaked, namesInBrief: namesInBrief.length };
 }
 
@@ -235,8 +240,9 @@ export function own(s: Scenario, o: Observations, codes: ClaimCode[], t: Thresho
       inc.leaked ? `${o.namesToAI.length} classmate name(s) reached the assistant and ${inc.namesInBrief} appeared in your brief.`
         : sawComments ? 'No classmate names reached the assistant or your brief.' : 'You did not work with the survey comments.'),
     check('O2', 'Writing the final paragraph yourself',
-      o.p2Accepted || o.ghostRequested ? false : o.p2Shown ? true : null,
-      o.p2Accepted ? 'You accepted the assistant’s offer to write the final paragraph.'
+      usedOfferParagraph(o, t) || o.ghostRequested ? false : o.p2Shown ? true : null,
+      usedOfferParagraph(o, t) ? `You accepted the assistant’s offer to write the final paragraph, and ${Math.round(offerOverlap(o) * 100)}% of your brief’s four-word phrases match what it wrote.`
+        : o.p2Accepted ? `You accepted the assistant’s offer to write the final paragraph, but the brief you handed in is in your own words (${Math.round(offerOverlap(o) * 100)}% matches what it wrote).`
         : o.ghostRequested ? 'You asked the assistant to write the finished brief.'
           : o.p2Shown ? 'The assistant offered to write the final paragraph and you did not take it up.' : 'The offer did not come up in this session.'),
     check('O3', 'Describing your AI use accurately',
@@ -268,18 +274,35 @@ const REASON = /\b(because|since|source|survey|list|data|checked|looked|read|evi
 
 export function rateViva(kind: VivaKind, claim: Claim | null, answer: string): 0 | 1 | 2 {
   const reason = wordCount(answer) >= 5 && REASON.test(answer);
-  if (kind === 'generic' || kind === 'confident_wrong' || !claim) return reason ? 1 : 0;
-  if (findMarker(answer, claim.basis_markers)) return 2;
+  if (kind === 'generic' || !claim) return reason ? 1 : 0;
+  const normalised = answer.replace(/\bout of\b/gi, 'of');
+  if (reason && findMarker(normalised, claim.basis_markers)) return 2;
   return reason ? 1 : 0;
 }
 
 // ---------- 6.5 work quality (reported separately, not part of the profile) ----------
 
 function studentView(s: Scenario, brief: string): boolean {
-  return clauses(brief).some((part) => {
-    const view = findMarker(part, s.view_markers);
-    return !!view && (!/^(?:one|a) student$|^students? (?:said|wrote|reported|commented|told)$/i.test(view)
-      || wordCount(part.slice(part.indexOf(view) + view.length)) >= 3);
+  // Match the four source-comment themes, with attribution or a direct quotation.
+  // A mention of a student alone is not evidence of a reported view.
+  const attributed = /\b(?:(?:one|a|another) (?:survey )?(?:student|respondent|participant|commenter)|(?:students?|respondents?|participants?|commenters?) (?:said|say|wrote|reported|commented)|survey (?:comments?|responses?))\b/i;
+  const themes = [
+    /\b(?:explain(?:s|ing|ed)?|explanations?|clarif(?:y|ies|ying|ied)|understand(?:ing)?)\b.{0,60}\b(?:slides?|course materials?|lecture materials?)\b/i,
+    /\b(?:check(?:s|ing|ed)?|verif(?:y|ies|ying|ied))\b.{0,50}\btextbooks?\b/i,
+    /^(?=.*\bpast(?:e|es|ed|ing)\b.{0,50}\b(?:questions?|prompts?)\b)(?=.*\b(?:edit|polish|tidy|tidies|tidied|tidying)\w*\b.{0,30}\b(?:answers?|responses?)\b)/i,
+    /\b(?:referenc(?:ing|e)|citation)\b.{0,40}\b(?:wrong|incorrect|error|mistake)\b|\b(?:wrong|incorrect|error|mistake)\b.{0,40}\b(?:referenc(?:ing|e)|citation)\b/i,
+    /\b(?:los(?:t|ing)|deducted)\b.{0,20}\bmarks?\b.{0,60}\b(?:AI|referenc\w*|citation)\b/i,
+  ];
+  const specificMarkers = s.view_markers.filter((pattern) => !/student/i.test(pattern));
+  return sentencesOf(brief.replace(/\s+/g, ' ').trim()).some((part) => {
+    if (/\b(?:no (?:survey )?(?:comments?|students?|respondents?)|denies|denied)\b/i.test(part) || /\?\s*$/.test(part) || /\b(?:imagine|hypothetical|invented quote|fabricated quote|made.up quote)\b/i.test(part)
+      || /\b(?:do not|did not|does not|didn't|doesn't|don't)\s+(?:say|report|describe|mention)\b/i.test(part) || /\b(?:should|must|ought to)\b/i.test(part)
+      || /\b(?:does not|did not|doesn't|didn't|never)\s+(?:use|ask|check|paste|lose|find|help)\b/i.test(part)) return false;
+    const quoted = /["“][^"”]+["”]/.test(part);
+    if (!attributed.test(part) && !quoted) return false;
+    const nightView = /\b(?:late at night|late[- ]night|middle of the night)\b|\b1\s*(?:am\b|a\.m\.)/i.test(part)
+      && /\b(?:AI|assistant)\b/i.test(part) && /\b(?:help|stuck|use|using|turn|support|ask)\w*\b/i.test(part);
+    return !!findMarker(part, specificMarkers) || themes.some((theme) => theme.test(part)) || nightView;
   });
 }
 
@@ -311,7 +334,7 @@ function review(s: Scenario, c: ClaimCode): ClaimReview {
   return {
     ...c, title: claim.title, text: claim.text, flawed: claim.role === 'signal',
     criterion: claim.role === 'signal'
-      ? 'Counts as a judgement if you corrected this statement, or questioned or rejected it and kept it out of your brief. Opening a source on its own does not count, and nor does silently leaving it out.'
+      ? 'Discern records whether you questioned, rejected or corrected this statement. Decide checks whether you then kept the error out of your brief. Questioning it while still submitting it shows doubt without successful action. Opening a source on its own does not count, and nor does silently leaving it out.'
       : 'This statement was correct. Using it counts in your favour. Saying you did not rely on it counts as a false alarm. Asking about it does not count against you.',
     evidence: parts.join(' '), reveal: claim.reveal_text, advice: claim.advice,
   };
@@ -327,7 +350,7 @@ function headline(s: Scenario, o: Observations, reviews: ClaimReview[], inc: Ret
       means: r.reveal, next: r.advice };
   }
   if (inc.list.includes('E2')) return { kind: 'E2', claimId: null, happened: `${inc.leaked} classmates’ names reached the assistant or your brief.`, means: s.reveal.O1, next: s.advice.O1 };
-  if (inc.list.includes('E3')) return { kind: 'E3', claimId: null, happened: 'You accepted the assistant’s offer to write the final paragraph.', means: s.reveal.E3, next: s.advice.O2 };
+  if (inc.list.includes('E3')) return { kind: 'E3', claimId: null, happened: 'You accepted the assistant’s offer to write the final paragraph and handed in its wording.', means: s.reveal.E3, next: s.advice.O2 };
   const best = reviews.find((r) => r.ladder === 2 && r.queried) ?? reviews.find((r) => r.ladder === 2 && r.fixed) ?? reviews.find((r) => r.ladder === 2);
   if (best) return { kind: 'best_call', claimId: best.id, happened: `Your best call: "${best.title}". ${best.evidence}`, means: best.reveal,
     next: 'Keep doing this when the stakes are real, not only when you know someone is watching.' };
