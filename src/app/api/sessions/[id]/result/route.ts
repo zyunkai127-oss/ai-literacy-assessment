@@ -1,27 +1,33 @@
 import { json, withSession } from '@/lib/api';
 import { requireState } from '@/lib/machine';
 import { scenario } from '@/lib/scenario';
-import { claimsFor } from '@/lib/scoring';
+import { claimsFor, DIMENSIONS, scoreTotal } from '@/lib/scoring';
 import { cohortSessions, logEvent } from '@/lib/store';
-
-const MIN_COHORT = 5;
 
 // GET /api/sessions/:id/result -> the reveal. Only available once the session has reached the reveal state.
 export const GET = withSession((s) => {
   requireState(s.state, 'reveal');
-  const result = s.data.result!;
-  const peers = cohortSessions().filter((p) => p.mode === s.mode && p.data.result);
-  const cohort = peers.length < MIN_COHORT ? [] : result.nodes.filter((n) => n.flawed).map((n) => {
-    const trusted = peers.filter((p) => p.data.result!.nodes.find((x) => x.id === n.id)?.trustedError).length;
-    return { nodeId: n.id, pct: Math.round((100 * trusted) / peers.length), n: peers.length };
+  const { nodes, suggestions } = s.data.result!;
+  const claims = claimsFor(scenario, s.mode);
+  const legacy = nodes.some((node) => !node.criterion);
+  const peers = cohortSessions().filter((peer) => peer.mode === s.mode && peer.data.draftShownAt);
+  const cohort = nodes.filter((node) => node.flawed && node.reveal).flatMap((node) => {
+    const exposed = peers.filter((peer) => !peer.data.controlledClaimId || peer.data.controlledClaimId === node.id);
+    if (exposed.length < 5) return [];
+    const trusted = exposed.filter((peer) => peer.data.result?.nodes.some((item) => item.id === node.id && item.trustedError)).length;
+    return [{ nodeId: node.id, pct: Math.round(100 * trusted / exposed.length), n: exposed.length }];
   });
   logEvent(s.id, 'reveal_view', {});
   return json({
-    mode: s.mode,
-    result,
+    overall: scoreTotal(nodes),
+    dimensions: DIMENSIONS.map((dimension) => ({ dimension, ...scoreTotal(nodes.filter((node) => node.dimension === dimension)) })),
+    nodes: nodes.map((node) => ({
+      ...node,
+      statement: node.statement ?? (node.reveal ? claims.find((claim) => claim.id === node.id)?.text : undefined),
+      evidence: !s.store && legacy && node.id === 'instruction' ? 'The original rubric checked your first instruction.' : node.evidence,
+    })),
+    suggestions,
     cohort,
-    statements: claimsFor(scenario, s.mode).map((c) => ({ id: c.id, text: c.text, flawed: c.is_flawed })),
-    brief: s.data.brief ?? '',
-    notice: scenario.meta.notice,
+    legacy,
   });
 });

@@ -1,13 +1,11 @@
 // Session state machine. The server is the only place state changes.
 import type { SessionState } from './types';
 
-export const ORDER: SessionState[] = ['consent', 'intro', 'work', 'debrief', 'reveal'];
-
 const NEXT: Record<SessionState, SessionState | null> = {
   consent: 'intro',
   intro: 'work',
-  work: 'debrief',
-  debrief: 'reveal',
+  work: 'reveal',
+  debrief: 'reveal', // Previously submitted sessions can still open their results.
   reveal: null,
 };
 

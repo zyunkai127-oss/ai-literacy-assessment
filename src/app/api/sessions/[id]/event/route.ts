@@ -1,12 +1,13 @@
 import { fail, json, withSession } from '@/lib/api';
 import { requireState } from '@/lib/machine';
 import { scenario } from '@/lib/scenario';
-import { logEvent, saveSession } from '@/lib/store';
+import { getSession, logEvent, saveSession } from '@/lib/store';
 
 // POST /api/sessions/:id/event { type: 'pack_open', section } | { type: 'draft', text }
-export const POST = withSession(async (s, req) => {
-  requireState(s.state, 'work');
+export const POST = withSession(async ({ id }, req) => {
   const body = (await req.json()) as { type?: string; section?: string; text?: string };
+  const s = getSession(id)!;
+  requireState(s.state, 'work');
   if (body.type === 'pack_open') {
     if (!scenario.pack.some((p) => p.id === body.section)) return fail(400, 'Unknown section');
     s.data.opens.push({ section: body.section!, ts: Date.now() });

@@ -23,15 +23,15 @@ export default function Consent() {
 
       <div className="card">
         <h2>Before you start</h2>
-        <p><b>The AI in this activity may sometimes be wrong.</b> That is part of the activity. Everything it got wrong is shown to you at the end, so you leave with no false information.</p>
-        <p>All data, names and references in the activity are fictional. There is no overall score and no ranking. The feedback is for you.</p>
+        <p><b>The AI in this activity may sometimes be wrong.</b> That is part of the activity. When live chat is available, your redacted messages go to the AI provider.</p>
+        <p>All data, names and references are fictional. The assessment uses your chat, source opens, editor snapshots and submitted brief. Your score uses only criteria the session can assess.</p>
         <label className="check">
           <input type="checkbox" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} />
           <span>I understand that the AI in this activity may sometimes be wrong.</span>
         </label>
         <label className="check">
           <input type="checkbox" checked={store} onChange={(e) => setStore(e.target.checked)} />
-          <span>Optional: store my session anonymously so it can be included in today&apos;s group comparison. No name or account is collected. If you leave this unticked, your messages and brief are deleted when you finish.</span>
+          <span>Optional: store my session anonymously so it can be included in today&apos;s group comparison. No name or account is collected. If you leave this unticked, your messages and brief are deleted from this app when you finish.</span>
         </label>
       </div>
 

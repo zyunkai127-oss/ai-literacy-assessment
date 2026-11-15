@@ -44,16 +44,11 @@ details .body { padding: 0 12px 10px; white-space: pre-wrap; font-size: 14px; }
 .composer { display: flex; gap: 8px; margin-top: 10px; }
 .brief { flex: 1; min-height: 0; }
 
-.headline { border-left: 6px solid var(--warn); }
-.headline.best_call { border-left-color: var(--good); }
-.step { margin: 10px 0; }
-.step b { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
-.flip { cursor: pointer; }
-.flip.closed { text-align: center; color: var(--muted); border-style: dashed; }
+.overall-score { font-size: 36px; font-weight: 700; color: var(--accent); }
 .pill { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 999px; }
-.pill.s0, .pill.Emerging { background: var(--warn-bg); color: var(--warn); }
-.pill.s1, .pill.Developing { background: var(--mid-bg); color: var(--mid); }
-.pill.s2, .pill.Proficient { background: var(--good-bg); color: var(--good); }
+.pill.s0 { background: var(--warn-bg); color: var(--warn); }
+.pill.s1 { background: var(--mid-bg); color: var(--mid); }
+.pill.s2 { background: var(--good-bg); color: var(--good); }
 .dims { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .dim { border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
-@media (max-width: 900px) { .cols { grid-template-columns: 1fr; overflow-y: auto; } .work { height: auto; } .col { min-height: 320px; } .dims { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .cols { grid-template-columns: 1fr; overflow-y: auto; } .work { height: auto; } .col { min-height: 320px; } .col.references { min-height: auto; } .dims { grid-template-columns: 1fr; } }

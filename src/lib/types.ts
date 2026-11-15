@@ -1,6 +1,5 @@
 export type Mode = 'judge' | 'full';
 export type Dimension = 'Effective' | 'Critical' | 'Independent' | 'Responsible';
-export type Band = 'Emerging' | 'Developing' | 'Proficient';
 export type Score = 0 | 1 | 2;
 
 export interface Claim {
@@ -56,23 +55,27 @@ export interface Observations {
   openedAfterDraft: Record<string, number>;
   /** Sections opened after the teammate message appeared. */
   openedAfterTeammate: string[];
-  teammateShown: boolean;
+  teammateAt?: number;
   /** Claim ids the student asked the assistant about. */
   queried: string[];
-  /** Claim ids the student said, at the debrief, they decided not to rely on. */
-  flagged: string[];
-  /** Overall confidence from the debrief, 0 to 1. */
-  confidence: number;
+  exposedClaimIds: string[];
+  revisions: string[];
+  studentMessages: Msg[];
+  assistantReplies: string[];
+  commentsOpened: boolean;
   namesSentToAI: string[];
   ghostwriteRequested: boolean;
   overtime: boolean;
+  quoteInstruction: boolean;
 }
 
 export interface NodeResult {
   id: string;
   dimension: Dimension;
   title: string;
-  score: Score;
+  score: Score | null;
+  criterion?: string;
+  statement?: string;
   evidence: string;
   reveal: string;
   advice: string;
@@ -80,20 +83,15 @@ export interface NodeResult {
   trustedError?: boolean;
 }
 
-export interface DimensionResult {
-  dimension: Dimension;
-  ratio: number;
-  band: Band;
-  nodes: number;
-  capped: boolean;
+export interface ScoreTotal {
+  earned: number;
+  possible: number;
+  percentage: number | null;
 }
 
 export interface Result {
-  headline: { kind: 'confident_wrong' | 'unsure_wrong' | 'best_call' | 'none'; nodeId: string | null; happened: string; means: string; next: string };
   nodes: NodeResult[];
-  dimensions: DimensionResult[];
   suggestions: string[];
-  calibration: { confidence: number; accuracy: number | null; overconfidence: number | null };
 }
 
 export type SessionState = 'consent' | 'intro' | 'work' | 'debrief' | 'reveal';
@@ -109,6 +107,7 @@ export interface SessionData {
   messages: Msg[];
   turns: number;
   draftShownAt?: number;
+  controlledClaimId?: string;
   teammateAt?: number;
   firstInstruction?: string;
   namesSent: string[];
@@ -117,8 +116,6 @@ export interface SessionData {
   opens: { section: string; ts: number }[];
   brief?: string;
   submittedAt?: number;
-  followUp?: string;
-  debrief?: { flagged: string[]; confidence: number; answer: string };
   result?: Result;
 }
 

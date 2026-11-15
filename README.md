@@ -8,26 +8,18 @@ Students use AI for coursework, but assessment looks only at the finished piece.
 
 ## What this does
 
-A student completes one small, timed piece of work with an AI research assistant: a briefing paragraph for a supervisor, written from a fictional source pack. The assistant's first draft contains pre-written statements, some of them wrong. The student is told the AI may be wrong, but not where.
+A student completes one small, timed piece of work with an AI research assistant: a briefing paragraph for a supervisor, written from a fictional source pack. Normal messages go to the live assistant. The app observes chat and student work in the background. Phase 1 runs without scripted interventions.
 
-The system does not ask quiz questions. It records what the student does (what they ask, which sources they open, what ends up in the brief) and scores a small set of moments where good and poor use of AI leave different traces. At the end, every planted error is revealed and the student gets feedback that quotes their own session.
+Students work in AI Chat and the Brief editor with optional access to the source pack. Submitting the brief opens the results directly. The results show an overall percentage, the four competency percentages where supported, points with evidence and personalised feedback. Older sessions can still show corrections to any controlled statements they received.
 
-There is no overall score and no ranking.
+| Competency | Evidence the rubric uses |
+|---|---|
+| Effective | Specificity of the first task instruction and whether the submitted brief meets the task requirements |
+| Critical | Controlled-claim evidence from older sessions. New Phase 1 sessions show Insufficient Evidence for this criterion. |
+| Independent | Wording overlap with assistant replies, requests for a finished brief, and recorded responses to teammate messages in older sessions |
+| Responsible | Handling of classmate names and attribution for recognised data points |
 
-| Moment | What is planted | What is recorded | Area |
-|---|---|---|---|
-| First instruction | The assistant waits for the student | Whether the message names topic, length or audience, and sources | Effective |
-| Altered number | Draft says 65%, source says 56% | Source opened; which figure is in the brief | Critical |
-| Invented reference | A study that is not on the reading list | Reading list opened; reference kept or dropped | Critical |
-| Correlation as causation | "proves that using AI improves learning" | Causal wording in the brief | Critical |
-| Surprising but correct | A true figure that looks too high | Whether it was rejected | Critical |
-| Teammate pressure (full version) | A teammate says a correct figure is wrong | Checked the source, or just dropped it | Independent |
-| Own wording | The AI draft is right there, the clock is running | Word-for-word overlap; requests to write the brief | Independent |
-| Classmates' names | Raw survey comments include names | Names sent to the assistant or left in the brief | Responsible |
-| Naming sources | The request asks where data comes from | Source named in the brief | Responsible |
-| Meeting the request | 2 data points, 1 student view, on time | Counted from the brief | Effective |
-
-Each moment scores 0, 1 or 2. An area's result is the share of points earned: below 0.5 Emerging, 0.5 to 0.79 Developing, 0.8 and above Proficient. Sharing a classmate's name caps Responsible at Developing.
+An item earns 0–2 points when there is scorable evidence. Each percentage is earned points divided by available points, rounded to a whole percentage. Items with insufficient evidence count toward neither total. A source open records access and does not by itself establish whether a claim was verified. A competency with no scorable items shows **Insufficient Evidence**.
 
 ## Run it
 
@@ -37,10 +29,10 @@ Requires Node 22.13 or later (it uses Node's built-in SQLite).
 npm install
 cp .env.example .env.local   # then add ANTHROPIC_API_KEY
 npm run dev                  # http://localhost:3000
-npm test                     # unit tests for scoring, guardrails and the state machine
+npm test                     # chat context, scoring, guardrails and session state
 ```
 
-Without an API key the app still runs: free-form follow-up questions get a pre-written reply and the chat panel is labelled "offline replies".
+Add a valid Anthropic API key to `.env.local` and restart the dev server to enable live chat. The default Claude API model is `claude-haiku-5-5`. With no credentials, the chat is unavailable and students can continue using the source pack and editor.
 
 - `/` consent and choice of version (quick: 3 minutes, full: 8 minutes)
 - `/s/:id` the session
@@ -58,19 +50,19 @@ src/lib/scoring.ts        pure scoring functions
 src/lib/guardrails.ts     pure guardrail checks
 src/lib/machine.ts        session state machine
 src/lib/store.ts          SQLite: sessions and the event log
-src/lib/llm.ts            streamed model replies, with fallback
+src/lib/llm.ts            streamed model replies and service errors
 src/lib/scenario.ts       server-only loader; strips the answer key for the browser
 src/app/api/...           route handlers
 src/app/...               pages
 ```
 
-**Session state** lives on the server: `consent → intro → work → debrief → reveal`. Any request made in the wrong state gets a 409.
+**Session state** lives on the server: `consent → intro → work → reveal`. Requests made in the wrong state get a 409. A previous submission awaiting debrief can open results through the submit endpoint, and completed legacy sessions retain their original points.
 
 **Setting and marking are separate.** The answer key exists only in `data/scenario.json` and is read only by server code. The assistant's system prompt contains no information about which statements are wrong. No endpoint returns markers, flags or reveal text until the session reaches `reveal`.
 
-**Pre-written statements are never rewritten by a model.** The first draft, and the assistant's reply when a student questions one of its statements, are returned verbatim, so a model cannot quietly correct a planted error. Only open follow-up questions go to the live model.
+**Chat and observation are separate.** The model gets the project brief, anonymised source documents and conversation history. New sessions do not create controlled claim or teammate exposures. Unshown claims are excluded from scoring. Older sessions retain their recorded evidence.
 
-**Event log.** Every consent, message, source opened, draft snapshot, guardrail trigger, submission and debrief answer is stored with a timestamp.
+**Event log.** Every consent, message, source opened, draft snapshot, guardrail trigger, submission and score is stored with a timestamp.
 
 ### API
 
@@ -81,45 +73,36 @@ src/app/...               pages
 | `POST /api/sessions/:id/start` | Start the clock |
 | `POST /api/sessions/:id/chat` | Send a message. Responds with a server-sent event stream |
 | `POST /api/sessions/:id/event` | Record a source being opened or a draft snapshot |
-| `POST /api/sessions/:id/teammate` | Deliver the scripted teammate message (full version) |
-| `POST /api/sessions/:id/submit` | Submit the brief |
-| `POST /api/sessions/:id/debrief` | Submit the three debrief answers; scoring runs here |
+| `POST /api/sessions/:id/submit` | Submit the brief, score it and unlock results |
 | `GET /api/sessions/:id/result` | The reveal |
 | `GET /api/ops` | Operational figures |
 
-### Guardrails (in code, before any model call)
+### Privacy and observation
 
-1. **Personal data.** Classmate names from the source pack, email addresses and phone numbers are replaced before the message is stored or sent to the model.
-2. **Extraction attempts.** Messages that try to get the system prompt, the answer key or the scoring rules receive a fixed refusal and never reach the model.
-3. **Guide-only mode.** When a student asks the assistant to write the finished brief, the assistant's rules change for the rest of the session: it asks guiding questions and suggests a structure instead.
-
-The assistant's rules also change when under a minute is left (shorter replies). The model is told not to introduce any statistic or reference beyond its draft. Every trigger is written to the event log, and two of the three also count as evidence in the results.
+Classmate names, email addresses and phone numbers are redacted from chat before storage and transmission. The model receives the anonymised source pack. Potential requests for internal instructions or finished work are logged as signals. They do not change how the assistant answers.
 
 ## Ethics
 
 - Before starting, the student is told "The AI in this activity may sometimes be wrong" and must confirm they understand.
-- Storing the session is a separate, optional choice. Without it, the student's messages and brief are deleted when they finish and they are left out of the group comparison.
-- Every planted error is revealed at the end, with the correct information.
+- Storing the session is a separate, optional choice. Without it, the student's messages, brief and free-text snapshots are deleted from app storage when they finish. Derived scoring evidence remains available to them and they are left out of the group comparison.
+- Any controlled error that appeared in an older session is revealed at the end, with the correct information.
 - Planted errors are confined to a fictional module. The invented reference carries a publication year in the future and names no real person or journal.
 - Feedback is addressed to the student and describes this session only.
 
 ## APIs used
 
-- Anthropic Messages API (streaming), model `claude-haiku-5-5`, through `@anthropic-ai/sdk`. Used only for open follow-up questions.
+- Anthropic Messages API (streaming), model `claude-haiku-5-5`, through `@anthropic-ai/sdk`. Used for normal chat. Redacted messages and source-pack excerpts are sent to the provider.
 
 No other external services.
 
 ## Known limitations
 
-- **Thresholds are not calibrated.** The three bands are placeholders.
-- **Few moments per area.** Independent rests on one or two moments, Effective on two. A session with little activity scores 1 on most moments and lands on Developing by default.
-- **It measures what a student can do when alert**, not what they do under normal conditions. They know the AI may be wrong.
-- **Only in-app behaviour is visible.** Reading a source without opening its section, or checking elsewhere, is not recorded.
-- **Marker matching is simple.** The brief is checked with patterns. Unusual rewording can be missed, and the check for causal language only recognises common phrasings.
-- **Follow-up conversation is not scored**, apart from the guardrail triggers.
-- **Small group comparison.** It is hidden below 5 stored sessions and covers the last 24 hours only.
-- **The live model can drift from the script.** It is told not to comment on its own draft, but a model may still hint at a problem if a student asks an open question.
-- Not verified: the teammate message was checked through the API but not watched arriving in the browser, and the full 8-minute version has not been walked through end to end in a browser.
+- **The rubric is uncalibrated.** Percentages describe observed criteria in this task. Two sessions can have different available points.
+- **Only in-app activity is visible.** Opening a source shows access. Reading elsewhere and edits between autosave snapshots may leave no trace.
+- **Matching is rule-based.** Data, citation, student-view and decision patterns can miss natural rewordings or misread ambiguous wording. Attribution looks for the source in the same sentence or clause as the data.
+- **The timer includes five seconds of submission tolerance.** Students can still submit after the timer reaches zero. The completion criterion accounts for overtime.
+- **Group comparison is limited.** It covers consenting sessions shown the same controlled claim in the last 24 hours and appears only when at least five qualify.
+- **Live model accuracy varies.** The rubric does not treat an unplanned model error as a controlled assessment opportunity.
 
 ## Needs human review before use
 
@@ -129,8 +112,8 @@ All scenario content was generated quickly and is marked `needs_review: true` in
 2. **The three planted errors are wrong in the way the reveal says**: 65% against 56%; Marlowe & Quist (2031) absent from the reading list; "proves" against the method note.
 3. **The invented reference** matches no real author, study or journal.
 4. **The four classmate names** are fictional and match no real student.
-5. **The quick-version path** (`judge_path: true`): statements c2, c3, c4, c5 and all five non-statement moments. This is what judges will see.
-6. **Marker patterns** (`error_markers`, `fixed_markers`, `keep_markers`): try several natural rewordings of each statement and confirm they are detected.
+5. **Historical quick-version claims** (`judge_path: true`): verify the reveal and grading for recorded exposures. Unobserved criteria remain unscored.
+6. **Marker patterns** (`error_markers`, `keep_markers`, and the data-point patterns in `scoring.ts`): try several natural rewordings of each statement and confirm they are detected.
 7. **Reveal and advice wording** for tone.
 
 ## Contributing

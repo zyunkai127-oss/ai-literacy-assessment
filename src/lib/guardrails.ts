@@ -10,7 +10,7 @@ export function redactPII(text: string, knownNames: string[]): PiiResult {
     const parts = [full, ...full.split(' ')];
     let hit = false;
     for (const p of parts) {
-      const re = new RegExp(`\\b${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g');
+      const re = new RegExp(`\\b${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
       if (re.test(out)) { hit = true; out = out.replace(re, '[name removed]'); }
     }
     if (hit) names.push(full);
@@ -33,12 +33,9 @@ const INJECTION = [
 export const detectInjection = (text: string) => INJECTION.some((r) => r.test(text));
 
 const GHOSTWRITE = [
-  /\b(write|finish|complete|do|produce|generate) (it|this|the (whole |entire |full |final )?(brief|briefing|paragraph|thing|task|answer))( for me)?\b/i,
-  /\bjust (write|give me) (it|the (final |finished )?(brief|paragraph|version|answer))/i,
-  /\b(final|finished|submittable|ready.to.submit) (version|draft|paragraph|brief)\b/i,
-  /\bfor me to (submit|hand in|paste)\b/i,
+  /\b(?:write|finish|complete|produce|generate|give me) (?:the |my |a )?(?:whole |entire |full |final |finished |submittable |ready.to.submit )(?:brief(?:ing)?|draft|paragraph|version|answer)\b/i,
+  /\b(?:write|finish|complete|produce|generate) (?:the |my )(?:brief(?:ing)?|paragraph|assignment) for me\b/i,
+  /\b(?:write|draft|generate|produce)\b[^.!?]{0,80}\bfor me to (?:submit|hand in)\b/i,
 ];
-/** True when the student asks the assistant to produce the finished piece of work. */
+/** A passive signal for explicit requests to produce finished work. */
 export const detectGhostwrite = (text: string) => GHOSTWRITE.some((r) => r.test(text));
-
-export const INJECTION_REPLY = "I can't share anything about how this activity is set up or assessed. I can help with the briefing itself: what would you like to work on?";

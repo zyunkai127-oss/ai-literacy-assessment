@@ -3,7 +3,9 @@ import type { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { Mode, Observations, Session, SessionData, SessionState } from './types';
+import { scenario } from './scenario';
+import { claimsFor } from './scoring';
+import type { Mode, Observations, Result, Session, SessionData, SessionState } from './types';
 
 const g = globalThis as unknown as { __alcDb?: DatabaseSync };
 
@@ -72,14 +74,27 @@ export function sessionCounts() {
   return db().prepare('SELECT state, COUNT(*) AS n FROM sessions GROUP BY state').all() as { state: string; n: number }[];
 }
 
-/** Sessions that declined storage keep nothing but their scores once finished. */
-export function scrubIfNotStored(s: Session) {
-  if (s.store) return;
-  db().prepare("DELETE FROM events WHERE session_id = ? AND type IN ('chat_user','chat_assistant','draft_snapshot','submit','debrief')").run(s.id);
+/** Persist the result and clear non-consenting participants' transient work together. */
+export function finishSession(s: Session, result: Result) {
+  const database = db();
+  database.exec('BEGIN');
+  try {
+    if (!s.store) {
+      database.prepare("DELETE FROM events WHERE session_id = ? AND type IN ('chat_user','chat_assistant','draft_snapshot','submit','debrief')").run(s.id);
+      s.data = { messages: [], turns: 0, namesSent: [], ghostwrite: false, queried: [], opens: [] };
+    }
+    s.data.result = result;
+    saveSession(s);
+    logEvent(s.id, 'scored', { nodes: result.nodes.map((node) => [node.id, node.score]) });
+    database.exec('COMMIT');
+  } catch (error) {
+    database.exec('ROLLBACK');
+    throw error;
+  }
 }
 
 /** Builds the scorer's input from server-side session state. */
-export function observe(s: Session): Observations {
+export function observe(s: Session, timeLimit: number): Observations {
   const start = s.startedAt ?? s.createdAt;
   const sec = (ts: number) => Math.max(0, (ts - start) / 1000);
   const d = s.data;
@@ -87,18 +102,27 @@ export function observe(s: Session): Observations {
   for (const o of d.opens) {
     if (d.draftShownAt && o.ts >= d.draftShownAt && openedAfterDraft[o.section] === undefined) openedAfterDraft[o.section] = sec(o.ts);
   }
+  const revisions = d.draftShownAt
+    ? (db().prepare("SELECT payload FROM events WHERE session_id = ? AND type = 'draft_snapshot' AND ts >= ? ORDER BY id")
+        .all(s.id, d.draftShownAt) as { payload: string }[]).map(({ payload }) => JSON.parse(payload).text as string)
+    : [];
   return {
     mode: s.mode,
     firstInstruction: d.firstInstruction ?? '',
     brief: d.brief ?? '',
     openedAfterDraft,
     openedAfterTeammate: d.teammateAt ? [...new Set(d.opens.filter((o) => o.ts >= d.teammateAt!).map((o) => o.section))] : [],
-    teammateShown: !!d.teammateAt,
+    teammateAt: d.teammateAt,
     queried: d.queried,
-    flagged: d.debrief?.flagged ?? [],
-    confidence: d.debrief?.confidence ?? 0.5,
+    exposedClaimIds: d.controlledClaimId ? [d.controlledClaimId]
+      : d.draftShownAt ? claimsFor(scenario, s.mode).map((claim) => claim.id) : [],
+    revisions,
+    studentMessages: d.messages.filter((message) => message.role === 'user' && !!d.draftShownAt && message.ts >= d.draftShownAt),
+    assistantReplies: d.messages.filter((message) => message.role === 'assistant').map((message) => message.text),
+    commentsOpened: d.opens.some((open) => open.section === 'comments'),
     namesSentToAI: d.namesSent,
     ghostwriteRequested: d.ghostwrite,
-    overtime: false,
+    overtime: !!d.submittedAt && sec(d.submittedAt) > timeLimit + 5,
+    quoteInstruction: s.store,
   };
 }

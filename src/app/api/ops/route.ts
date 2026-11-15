@@ -19,9 +19,9 @@ export function GET() {
     sessions: sessionCounts(),
     events: events.length,
     guardrails,
-    replies: { scripted: bySource('scripted').length, model: bySource('model').length, fallback: bySource('fallback').length },
+    replies: { scripted: bySource('scripted').length, model: bySource('model').length, fallback: bySource('fallback').length, failed: bySource('error').length },
     modelFirstTokenMs: stats(bySource('model').map((e) => e.payload.firstTokenMs)),
     modelTotalMs: stats(bySource('model').map((e) => e.payload.totalMs)),
-    errors: replies.filter((e) => e.payload.error).slice(-5).map((e) => e.payload.error),
+    errors: bySource('error').filter((e) => e.payload.error).slice(-5).map((e) => e.payload.error),
   });
 }

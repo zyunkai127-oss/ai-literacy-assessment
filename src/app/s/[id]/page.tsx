@@ -1,14 +1,19 @@
 'use client';
 import { use, useCallback, useEffect, useRef, useState } from 'react';
-import type { Msg, Result, SessionState } from '@/lib/types';
+import { wordCount } from '@/lib/scoring';
+import type { Dimension, Msg, Result, ScoreTotal, SessionState } from '@/lib/types';
 
-type PublicClaim = { id: string; text: string };
 type View = {
   id: string; state: SessionState; mode: 'judge' | 'full';
-  scenario: { notice: string; timeLimit: number; task: { title: string; prompt: string; requirements: string[] }; pack: { id: string; title: string; body: string }[]; teammateDelay: number | null };
-  startedAt: number | null; serverNow: number; messages: Msg[]; claims: PublicClaim[]; teammateShown: boolean; brief: string; followUp: string | null; liveModel: boolean;
+  scenario: { notice: string; timeLimit: number; task: { title: string; prompt: string; requirements: string[] }; pack: { id: string; title: string; body: string }[] };
+  startedAt: number | null; serverNow: number; messages: Msg[]; brief: string; liveModel: boolean;
 };
-type Reveal = { mode: string; result: Result; cohort: { nodeId: string; pct: number; n: number }[]; statements: { id: string; text: string; flawed: boolean }[]; brief: string; notice: string };
+type Reveal = Result & {
+  overall: ScoreTotal;
+  dimensions: (ScoreTotal & { dimension: Dimension })[];
+  cohort: { nodeId: string; pct: number; n: number }[];
+  legacy: boolean;
+};
 
 const post = (url: string, body: unknown = {}) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -28,24 +33,70 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
 
   if (error) return <main className="wrap"><p className="error">{error}</p><a href="/">Start again</a></main>;
   if (!view) return <main className="wrap"><p className="muted">Loading</p></main>;
-  if (view.state === 'intro') return <Intro view={view} onStart={async () => { await post(`${api}/start`); load(); }} />;
+  if (view.state === 'intro') return <Intro view={view} api={api} onStart={load} />;
   if (view.state === 'work') return <Work view={view} api={api} onDone={load} />;
-  if (view.state === 'debrief') return <Debrief view={view} api={api} onDone={load} />;
+  if (view.state === 'debrief') return <PendingSubmission api={api} onDone={load} />;
   return <RevealPage api={api} />;
 }
 
-function Intro({ view, onStart }: { view: View; onStart: () => void }) {
-  const t = view.scenario.task;
+function Resources({ pack, onOpen }: { pack: View['scenario']['pack']; onOpen?: (section: string) => void }) {
+  return (
+    <details>
+      <summary>Additional Resources</summary>
+      <div className="body">
+        <p>Open the source pack as needed. It is available while you work.</p>
+        {pack.map((item) => (
+          <details key={item.id} onToggle={(event) => { if (event.currentTarget.open) onOpen?.(item.id); }}>
+            <summary>{item.title}</summary>
+            <div className="body">{item.body}</div>
+          </details>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function Intro({ view, api, onStart }: { view: View; api: string; onStart: () => void }) {
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const { task, pack, timeLimit, notice } = view.scenario;
+
+  async function start() {
+    setBusy(true);
+    setError('');
+    try {
+      const res = await post(`${api}/start`);
+      if (!res.ok) throw new Error((await res.json()).error);
+      onStart();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Unable to start the assessment.');
+      setBusy(false);
+    }
+  }
+
   return (
     <main className="wrap">
-      <h1>{t.title}</h1>
+      <h1>{task.title}</h1>
       <div className="card">
-        <p>{t.prompt}</p>
-        <ul>{t.requirements.map((r) => <li key={r}>{r}</li>)}</ul>
-        <p className="muted small">{view.scenario.notice}</p>
+        <h2>Project Introduction</h2>
+        <p>{task.prompt}</p>
+        <p className="muted small">{notice}</p>
       </div>
-      <p>You have <b>{mmss(view.scenario.timeLimit)}</b>. The clock starts when you press the button.</p>
-      <button className="primary" onClick={onStart}>Start</button>
+      <div className="card">
+        <h2>Project Requirements</h2>
+        <ul>{task.requirements.map((requirement) => <li key={requirement}>{requirement}</li>)}</ul>
+      </div>
+      <div className="card">
+        <h2>Expected Deliverables</h2>
+        <p>One 80–150-word briefing paragraph for your supervisor and the teaching committee.</p>
+      </div>
+      <Resources pack={pack} />
+      <section className="card">
+        <h2>Start Assessment</h2>
+        <p>You have <b>{mmss(timeLimit)}</b>. The clock starts when you begin.</p>
+        <button className="primary" disabled={busy} onClick={start}>Start assessment</button>
+        {error && <p role="alert" className="error">{error}</p>}
+      </section>
     </main>
   );
 }
@@ -53,14 +104,16 @@ function Intro({ view, onStart }: { view: View; onStart: () => void }) {
 function Work({ view, api, onDone }: { view: View; api: string; onDone: () => void }) {
   const [messages, setMessages] = useState<Msg[]>(view.messages);
   const [streaming, setStreaming] = useState<string | null>(null);
+  const [chatError, setChatError] = useState('');
   const [notices, setNotices] = useState<string[]>([]);
   const [input, setInput] = useState('');
   const [brief, setBrief] = useState(view.brief);
   const [left, setLeft] = useState(view.scenario.timeLimit);
   const [error, setError] = useState('');
-  const [hasClaims, setHasClaims] = useState(view.claims.length > 0);
+  const [submitting, setSubmitting] = useState(false);
+  const events = useRef(Promise.resolve());
+  const savedBrief = useRef(view.brief);
   const offset = useRef(view.serverNow - Date.now());
-  const teammateDone = useRef(view.teammateShown);
   const endRef = useRef<HTMLDivElement>(null);
   const busy = streaming !== null;
 
@@ -73,33 +126,32 @@ function Work({ view, api, onDone }: { view: View; api: string; onDone: () => vo
 
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [messages, streaming]);
 
-  // Autosave the brief so the event log has snapshots of how it changed.
-  useEffect(() => {
-    const t = setTimeout(() => { if (brief !== view.brief) post(`${api}/event`, { type: 'draft', text: brief }); }, 2500);
-    return () => clearTimeout(t);
-  }, [brief, api, view.brief]);
+  const record = useCallback((body: unknown, onSaved?: () => void) => {
+    events.current = events.current.then(async () => {
+      const res = await post(`${api}/event`, body);
+      if (!res.ok) throw new Error('An activity update could not be saved.');
+      onSaved?.();
+    }).catch(() => setError('An activity update could not be saved.'));
+  }, [api]);
 
-  // The scripted teammate message arrives a fixed time after the assistant's draft (full version only).
+  // Sample drafts while working. Submission always sends the final text directly.
   useEffect(() => {
-    if (!hasClaims || teammateDone.current || view.scenario.teammateDelay === null) return;
-    const t = setTimeout(async () => {
-      const res = await post(`${api}/teammate`);
-      const body = await res.json();
-      if (body.message) { teammateDone.current = true; setMessages((m) => [...m, body.message]); }
-    }, view.scenario.teammateDelay * 1000);
+    if (submitting) return;
+    const t = setTimeout(() => {
+      if (brief !== savedBrief.current) record({ type: 'draft', text: brief }, () => { savedBrief.current = brief; });
+    }, 2500);
     return () => clearTimeout(t);
-  }, [hasClaims, api, view.scenario.teammateDelay]);
+  }, [brief, record, submitting]);
 
   async function send() {
     const text = input.trim();
-    if (!text || busy) return;
+    if (!text || busy || submitting || !view.liveModel) return;
     setInput('');
-    setError('');
+    setChatError('');
     setNotices([]);
     setMessages((m) => [...m, { role: 'user', text, ts: Date.now() }]);
     setStreaming('');
     let reply = '';
-    let claims: PublicClaim[] | undefined;
     try {
       const res = await post(`${api}/chat`, { text });
       if (!res.ok || !res.body) throw new Error((await res.json()).error ?? 'Request failed');
@@ -116,31 +168,34 @@ function Work({ view, api, onDone }: { view: View; api: string; onDone: () => vo
           if (!part.startsWith('data: ')) continue;
           const ev = JSON.parse(part.slice(6));
           if (ev.type === 'delta') { reply += ev.text; setStreaming(reply); }
-          else if (ev.type === 'claims') claims = ev.claims;
           else if (ev.type === 'guardrail') setNotices((n) => [...n, ev.kind]);
-          else if (ev.type === 'error') setError(ev.message);
+          else if (ev.type === 'error') setChatError(ev.message);
         }
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'The assistant could not reply. Try again.');
+      setChatError(e instanceof Error ? e.message : 'The assistant could not reply. Try again.');
     }
-    if (reply) setMessages((m) => [...m, { role: 'assistant', text: reply, ts: Date.now(), claims }]);
-    if (claims) setHasClaims(true);
+    if (reply) setMessages((m) => [...m, { role: 'assistant', text: reply, ts: Date.now() }]);
     setStreaming(null);
   }
 
   async function submit() {
     setError('');
-    const res = await post(`${api}/submit`, { brief });
-    if (!res.ok) { setError((await res.json()).error); return; }
-    onDone();
+    setSubmitting(true);
+    try {
+      await events.current;
+      const res = await post(`${api}/submit`, { brief });
+      if (!res.ok) throw new Error((await res.json()).error);
+      onDone();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Submission failed. Try again.');
+      setSubmitting(false);
+    }
   }
 
-  const words = brief.trim() ? brief.trim().split(/\s+/).length : 0;
+  const words = wordCount(brief);
   const noticeText: Record<string, string> = {
     pii: 'Names and contact details were removed before your message reached the assistant.',
-    injection: 'The assistant cannot discuss how this activity is set up.',
-    ghostwrite: 'The assistant will guide you, but it will not write the finished brief.',
   };
 
   return (
@@ -151,26 +206,21 @@ function Work({ view, api, onDone }: { view: View; api: string; onDone: () => vo
         <span className={`timer ${left < 60 ? 'low' : ''}`}>{mmss(Math.max(0, left))}</span>
       </div>
       <div className="cols">
-        <section className="col">
-          <h2>Source pack</h2>
+        <section className="col references" aria-label="Project references">
           <div className="scroll">
-            <details open>
-              <summary>Your task</summary>
+            <details>
+              <summary>Project requirements</summary>
               <div className="body">{view.scenario.task.prompt}{'\n\n'}{view.scenario.task.requirements.map((r) => `• ${r}`).join('\n')}</div>
             </details>
-            {view.scenario.pack.map((p) => (
-              <details key={p.id} onToggle={(e) => { if ((e.target as HTMLDetailsElement).open) post(`${api}/event`, { type: 'pack_open', section: p.id }); }}>
-                <summary>{p.title}</summary>
-                <div className="body">{p.body}</div>
-              </details>
-            ))}
+            <Resources pack={view.scenario.pack} onOpen={(section) => record({ type: 'pack_open', section })} />
           </div>
         </section>
 
         <section className="col">
-          <h2>AI research assistant{view.liveModel ? '' : ' (offline replies)'}</h2>
+          <h2>AI Chat</h2>
           <div className="scroll">
-            {messages.length === 0 && !busy && <p className="muted">Tell the assistant what you need.</p>}
+            {!view.liveModel && <p role="status" className="muted">Live AI chat is unavailable. You can continue with the source pack and Brief editor.</p>}
+            {view.liveModel && messages.length === 0 && !busy && <p className="muted">Ask about the source pack or get help structuring your brief.</p>}
             {messages.map((m, i) => (
               <div key={i} className={`msg ${m.role}`}>
                 <div className="who">{m.role === 'user' ? 'You' : m.role === 'teammate' ? 'Sam (teammate)' : 'Assistant'}</div>
@@ -178,7 +228,7 @@ function Work({ view, api, onDone }: { view: View; api: string; onDone: () => vo
                 {m.claims?.map((c) => (
                   <div key={c.id} className="claim">
                     <span>{c.text}</span>
-                    <button className="small" onClick={() => setBrief((b) => (b ? `${b.trimEnd()} ${c.text}` : c.text))}>Insert</button>
+                    <button className="small" disabled={submitting || brief.length + c.text.length + 1 > 6000} onClick={() => setBrief((b) => (b ? `${b.trimEnd()} ${c.text}` : c.text))}>Insert</button>
                   </div>
                 ))}
               </div>
@@ -187,156 +237,123 @@ function Work({ view, api, onDone }: { view: View; api: string; onDone: () => vo
             {notices.map((n) => <div key={n}><span className="notice">{noticeText[n]}</span></div>)}
             <div ref={endRef} />
           </div>
+          {chatError && <p role="alert" className="error small">{chatError}</p>}
           <div className="composer">
-            <input type="text" value={input} placeholder="Message the assistant" onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') send(); }} />
-            <button className="primary" disabled={busy || !input.trim()} onClick={send}>Send</button>
+            <input aria-label="Message the assistant" maxLength={4000} disabled={submitting || !view.liveModel} type="text" value={input} placeholder="Message the assistant" onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') send(); }} />
+            <button className="primary" disabled={busy || submitting || !view.liveModel || !input.trim()} onClick={send}>Send</button>
           </div>
         </section>
 
         <section className="col">
-          <h2>Your brief</h2>
-          <textarea className="brief" value={brief} placeholder="Write your briefing paragraph here. You can insert statements from the assistant and edit them." onChange={(e) => setBrief(e.target.value)} />
+          <h2>Brief editor</h2>
+          <textarea aria-label="Brief" className="brief" maxLength={6000} disabled={submitting} value={brief} placeholder="Write your briefing paragraph here." onChange={(e) => setBrief(e.target.value)} />
           <div className="row" style={{ justifyContent: 'space-between', marginTop: 10 }}>
-            <span className="muted small">{words} words</span>
-            <button className="primary" disabled={words < 20} onClick={submit}>Submit to supervisor</button>
+            <span className="muted small">{words} words · 80–150 required</span>
+            <button className="primary" disabled={!words || busy || submitting} onClick={submit}>{submitting ? 'Submitting…' : 'Submit brief'}</button>
           </div>
-          {error && <p className="error small">{error}</p>}
+          {error && <p role="alert" className="error small">{error}</p>}
         </section>
       </div>
     </div>
   );
 }
 
-function Debrief({ view, api, onDone }: { view: View; api: string; onDone: () => void }) {
-  const [step, setStep] = useState(1);
-  const [flagged, setFlagged] = useState<string[]>([]);
-  const [confidence, setConfidence] = useState(50);
-  const [touched, setTouched] = useState(false);
-  const [answer, setAnswer] = useState('');
+function PendingSubmission({ api, onDone }: { api: string; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   async function finish() {
-    const res = await post(`${api}/debrief`, { flagged, confidence, answer });
-    if (!res.ok) { setError((await res.json()).error); return; }
-    onDone();
+    setBusy(true);
+    setError('');
+    try {
+      const res = await post(`${api}/submit`);
+      if (!res.ok) throw new Error((await res.json()).error);
+      onDone();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Unable to load your results.');
+      setBusy(false);
+    }
   }
 
   return (
     <main className="wrap">
-      <h1>Your supervisor has three questions</h1>
-      {step === 1 ? (
-        <>
-          <div className="card">
-            <h3>1. Which of the assistant&apos;s statements did you decide not to rely on?</h3>
-            <p className="muted small">Tick any that apply. Leave all unticked if none.</p>
-            {view.claims.map((c) => (
-              <label key={c.id} className="check">
-                <input type="checkbox" checked={flagged.includes(c.id)} onChange={(e) => setFlagged((f) => (e.target.checked ? [...f, c.id] : f.filter((x) => x !== c.id)))} />
-                <span>{c.text}</span>
-              </label>
-            ))}
-          </div>
-          <div className="card">
-            <h3>2. How confident are you that everything in your brief is accurate?</h3>
-            <input type="range" min={0} max={100} step={5} value={confidence} style={{ width: '100%' }} onChange={(e) => { setConfidence(Number(e.target.value)); setTouched(true); }} />
-            <p><b>{confidence}%</b> <span className="muted small">{touched ? '' : 'Move the slider to answer.'}</span></p>
-          </div>
-          <button className="primary" disabled={!touched} onClick={() => setStep(2)}>Next</button>
-        </>
-      ) : (
-        <>
-          <div className="card">
-            <h3>3. {view.followUp}</h3>
-            <textarea rows={4} value={answer} placeholder="One or two sentences" onChange={(e) => setAnswer(e.target.value)} />
-            <p className="muted small">This answer is recorded but not scored.</p>
-          </div>
-          <button className="primary" onClick={finish}>See what happened</button>
-          {error && <p className="error">{error}</p>}
-        </>
-      )}
+      <h1>Brief submitted</h1>
+      <button className="primary" disabled={busy} onClick={finish}>View results</button>
+      {error && <p role="alert" className="error">{error}</p>}
     </main>
   );
 }
 
+const percentage = (score: ScoreTotal) => score.percentage === null ? 'Insufficient Evidence' : `${score.percentage}%`;
+
 function RevealPage({ api }: { api: string }) {
   const [data, setData] = useState<Reveal | null>(null);
-  const [shown, setShown] = useState(0);
-  useEffect(() => { fetch(`${api}/result`).then((r) => r.json()).then(setData); }, [api]);
-  if (!data) return <main className="wrap"><p className="muted">Loading</p></main>;
-
-  const { result, cohort } = data;
-  const h = result.headline;
-  // The headline item is revealed first; the rest follow in session order.
-  const rest = result.nodes.filter((n) => n.id !== h.nodeId);
-  const allShown = shown >= rest.length;
-  const label = ['Missed', 'Partly', 'Well handled'];
-  const titles = { confident_wrong: 'The moment you were confident, and wrong', unsure_wrong: 'The error that got through', best_call: 'Your best call', none: 'What we saw' };
+  const [error, setError] = useState('');
+  useEffect(() => {
+    fetch(`${api}/result`).then(async (res) => {
+      if (!res.ok) throw new Error((await res.json()).error);
+      setData(await res.json());
+    }).catch(() => setError('Unable to load your results. Refresh to try again.'));
+  }, [api]);
+  if (error) return <main className="wrap"><p role="alert" className="error">{error}</p></main>;
+  if (!data) return <main className="wrap"><p className="muted">Loading results</p></main>;
 
   return (
     <main className="wrap">
-      <h1>What happened in your session</h1>
-      <p className="muted">Based on your choices in this session only. It describes what you did here, not what kind of person you are.</p>
+      <section className="card">
+        <h1>Overall AI Literacy Score</h1>
+        <p className="overall-score">{percentage(data.overall)}</p>
+        <p>{data.overall.earned} of {data.overall.possible} available points earned</p>
+        <p className="muted small">{data.legacy
+          ? 'This session was scored under the previous rubric. The percentage uses its original recorded points.'
+          : 'The percentage is points earned divided by points available across scored criteria. Items with insufficient evidence are excluded. This is a prototype score for this session.'}</p>
+      </section>
 
-      <div className={`card headline ${h.kind}`}>
-        <h2>{titles[h.kind]}</h2>
-        <div className="step"><b>What happened</b>{h.happened}</div>
-        <div className="step"><b>What it shows</b>{h.means}</div>
-        <div className="step"><b>What to do next</b>{h.next}</div>
-        {cohort.filter((c) => c.nodeId === h.nodeId).map((c) => <p key={c.nodeId} className="muted small">{c.pct}% of {c.n} people today also trusted this.</p>)}
-      </div>
-
-      <h2>Everything else, one at a time</h2>
-      {rest.map((n, i) =>
-        i < shown ? (
-          <div key={n.id} className="card">
-            <div className="row" style={{ justifyContent: 'space-between' }}>
-              <h3>{n.title}</h3>
-              <span className={`pill s${n.score}`}>{label[n.score]}</span>
+      <section className="card">
+        <h2>Competency Breakdown</h2>
+        <div className="dims">
+          {data.dimensions.map((dimension) => (
+            <div key={dimension.dimension} className="dim">
+              <h3>{dimension.dimension}</h3>
+              <b>{percentage(dimension)}</b>
+              {dimension.possible > 0 && <p className="muted small">{dimension.earned} / {dimension.possible} points</p>}
             </div>
-            <p className="muted small">{n.dimension}</p>
-            <div className="step"><b>What you did</b>{n.evidence}</div>
-            <div className="step"><b>What was going on</b>{n.reveal}</div>
-            {cohort.filter((c) => c.nodeId === n.id).map((c) => <p key={c.nodeId} className="muted small">{c.pct}% of {c.n} people today also trusted this.</p>)}
-          </div>
-        ) : i === shown ? (
-          <div key={n.id} className="card flip closed" onClick={() => setShown(shown + 1)}>Tap to reveal: {n.title}</div>
-        ) : null,
-      )}
-      {!allShown && <p><button onClick={() => setShown(rest.length)}>Reveal all</button></p>}
+          ))}
+        </div>
+      </section>
 
-      {allShown && (
-        <>
-          <div className="card">
-            <h2>The assistant&apos;s statements</h2>
-            {data.statements.map((s) => (
-              <p key={s.id}><span className={`pill ${s.flawed ? 's0' : 's2'}`}>{s.flawed ? 'Wrong' : 'Correct'}</span> {s.text}</p>
-            ))}
-            <p className="muted small">{data.notice}</p>
-          </div>
-
-          <div className="card">
-            <h2>Four areas</h2>
-            <div className="dims">
-              {result.dimensions.map((d) => (
-                <div key={d.dimension} className="dim">
-                  <div className="row" style={{ justifyContent: 'space-between' }}><b>{d.dimension}</b><span className={`pill ${d.band}`}>{d.band}</span></div>
-                  <p className="muted small">Based on {d.nodes} moment{d.nodes === 1 ? '' : 's'}{d.capped ? '. Limited because a classmate’s name was shared.' : '.'}</p>
-                </div>
+      <section className="card">
+        <h2>Detailed Points Earned / Lost</h2>
+        <p className="muted small">{data.nodes.some((node) => node.flawed && node.statement)
+          ? 'Corrections appear alongside the controlled statements shown during your session.'
+          : 'No controlled assistant error was shown during this session.'}</p>
+        {data.nodes.map((node) => (
+          <details key={node.id} open={(node.flawed && !!node.statement) || undefined}>
+            <summary>
+              {node.title}{' '}
+              <span className={node.score === null ? 'muted small' : `pill s${node.score}`}>
+                {node.score === null ? 'Insufficient Evidence' : `${node.score} earned · ${2 - node.score} lost`}
+              </span>
+            </summary>
+            <div className="body">
+              <p className="muted small">{node.dimension}</p>
+              {node.criterion && <p><b>Scoring criterion</b><br />{node.criterion}</p>}
+              <p><b>Session evidence</b><br />{node.evidence}</p>
+              {node.statement && <p><b>Assistant’s scripted statement</b><br />{node.statement}</p>}
+              {node.reveal && <p>{node.reveal}</p>}
+              {data.cohort.filter((peer) => peer.nodeId === node.id).map((peer) => (
+                <p key={peer.nodeId} className="muted small">{peer.pct}% of {peer.n} stored sessions shown this claim included this error.</p>
               ))}
             </div>
-            <p className="muted small" style={{ marginTop: 10 }}>Thresholds not yet calibrated. Each area rests on a handful of moments, so treat these as prompts for reflection, not grades.</p>
-            {result.calibration.overconfidence !== null && (
-              <p className="small">You said you were {Math.round(result.calibration.confidence * 100)}% confident. {Math.round(result.calibration.accuracy! * 100)}% of the data points in your brief were sound.</p>
-            )}
-          </div>
+          </details>
+        ))}
+      </section>
 
-          <div className="card">
-            <h2>Three things to try next</h2>
-            <ol>{result.suggestions.map((s) => <li key={s}>{s}</li>)}</ol>
-          </div>
-          <a href="/">Start a new session</a>
-        </>
-      )}
+      <section className="card">
+        <h2>Personalised Feedback</h2>
+        {data.suggestions.length > 0 && <ul>{data.suggestions.map((suggestion) => <li key={suggestion}>{suggestion}</li>)}</ul>}
+      </section>
+      <a href="/">Start a new session</a>
     </main>
   );
 }

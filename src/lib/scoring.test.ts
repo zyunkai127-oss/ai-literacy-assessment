@@ -2,123 +2,125 @@ import { describe, expect, it } from 'vitest';
 import raw from '../../data/scenario.json';
 import { detectGhostwrite, detectInjection, redactPII } from './guardrails';
 import { advance, StateError } from './machine';
-import { band, findMarker, instructionScore, overlap, scoreSession } from './scoring';
+import { findMarker, instructionScore, overlap, scoreSession, scoreTotal } from './scoring';
 import type { Observations, Scenario } from './types';
 
 const scenario = raw as unknown as Scenario;
 const draft = scenario.claims.map((c) => c.text).join(' ');
 
 const obs = (o: Partial<Observations>): Observations => ({
-  mode: 'full', firstInstruction: 'help', brief: '', openedAfterDraft: {}, openedAfterTeammate: [], teammateShown: true,
-  queried: [], flagged: [], confidence: 0.5, namesSentToAI: [], ghostwriteRequested: false, overtime: false, ...o,
+  mode: 'full', firstInstruction: '', brief: '', openedAfterDraft: {}, openedAfterTeammate: [], studentMessages: [],
+  queried: [], exposedClaimIds: scenario.claims.map((claim) => claim.id), revisions: [], assistantReplies: [], commentsOpened: false,
+  namesSentToAI: [], ghostwriteRequested: false, overtime: false, quoteInstruction: false, ...o,
 });
-const nodeOf = (r: ReturnType<typeof scoreSession>, id: string) => r.nodes.find((n) => n.id === id)!;
-const dimOf = (r: ReturnType<typeof scoreSession>, d: string) => r.dimensions.find((x) => x.dimension === d)!;
+const result = (o: Partial<Observations>) => scoreSession(scenario, obs(o));
+const node = (id: string, o: Partial<Observations>) => result(o).nodes.find((item) => item.id === id)!;
 
-describe('bands', () => {
-  it('uses the 0.5 and 0.8 thresholds', () => {
-    expect(band(0.49)).toBe('Emerging');
-    expect(band(0.5)).toBe('Developing');
-    expect(band(0.79)).toBe('Developing');
-    expect(band(0.8)).toBe('Proficient');
+describe('passive claim evidence', () => {
+  it('recognises including and correcting the altered figure', () => {
+    expect(node('c2', { brief: 'The survey found 65% use AI weekly.' })).toMatchObject({ score: 0, trustedError: true });
+    expect(node('c2', { brief: 'The survey found 56% use AI weekly.' }).score).toBe(2);
+    expect(node('c2', { brief: 'The weekly figure is 56%, not 65%.' }).score).toBe(2);
+    expect(node('c2', { revisions: ['The survey found 65% use AI weekly.'], brief: 'The survey found 56% use AI weekly.' }).evidence).toContain('earlier editor snapshot');
   });
-});
-
-describe('markers', () => {
-  it('ignores a causal word inside a negated sentence', () => {
-    const c4 = scenario.claims.find((c) => c.id === 'c4')!;
-    expect(findMarker('This proves that AI improves learning.', c4.error_markers, true)).toBeTruthy();
-    expect(findMarker('This does not show that AI improves learning.', c4.error_markers, true)).toBeNull();
+  it('requires a recorded decision to score omission', () => {
+    const openedAfterDraft = { refs: 75 };
+    expect(node('c3', { openedAfterDraft, queried: ['c3'] })).toMatchObject({ score: null, evidence: expect.stringContaining('You asked the assistant') });
+    const revisions = ['Marlowe and Quist found a 23% gain.'];
+    expect(node('c3', { revisions }).score).toBe(1);
+    expect(node('c3', { revisions, openedAfterDraft }).score).toBe(2);
   });
-});
-
-describe('flawed claims', () => {
-  it('scores 0 when the altered number is in the brief', () => {
-    const r = scoreSession(scenario, obs({ brief: 'The survey found 65% use AI weekly.' }), draft);
-    expect(nodeOf(r, 'c2').score).toBe(0);
-    expect(nodeOf(r, 'c2').trustedError).toBe(true);
+  it('keeps the quiz difference, while detecting unsupported causal language', () => {
+    expect(node('c4', { brief: 'Weekly users scored 3 points higher, which proves AI improves learning.' }).score).toBe(0);
+    expect(node('c4', { brief: 'Weekly users scored 3 points higher, but this does not prove that AI improves learning.' }).score).toBe(2);
+    const c4 = scenario.claims.find((claim) => claim.id === 'c4')!;
+    expect(findMarker('The AI improves learning, but the module has no textbook.', c4.error_markers, true)).toBeTruthy();
   });
-  it('scores 2 when the student corrects the number', () => {
-    const r = scoreSession(scenario, obs({ brief: 'The survey found 56% use AI weekly.' }), draft);
-    expect(nodeOf(r, 'c2').score).toBe(2);
+  it('neither scores nor reveals a controlled claim that was never shown', () => {
+    const item = node('c2', { exposedClaimIds: ['c4'], brief: '65% use AI weekly.' });
+    expect(item).toMatchObject({ score: null, reveal: '' });
+    expect(item.statement).toBeUndefined();
+    expect(item.trustedError).toBeUndefined();
   });
-  it('scores 2 when left out after checking, 1 when left out with no evidence', () => {
-    expect(nodeOf(scoreSession(scenario, obs({ openedAfterDraft: { refs: 75 } }), draft), 'c3').score).toBe(2);
-    expect(nodeOf(scoreSession(scenario, obs({}), draft), 'c3').score).toBe(1);
+  it('scores retaining the surprising correct figure without inferring rejection from omission', () => {
+    expect(node('c5', { brief: '85% were never shown how to check.' }).score).toBe(2);
+    expect(node('c5', { openedAfterDraft: { survey: 30 } }).score).toBeNull();
   });
-  it('keeps the quiz number but penalises the causal claim', () => {
-    expect(nodeOf(scoreSession(scenario, obs({ brief: 'Weekly users scored 3 points higher, which proves AI improves learning.' }), draft), 'c4').score).toBe(0);
-    expect(nodeOf(scoreSession(scenario, obs({ brief: 'Weekly users scored 3 points higher, but this may reflect seminar attendance.' }), draft), 'c4').score).toBe(2);
+  it('scores the independent decision to retain the figure after checking', () => {
+    const teammateAt = 1000;
+    const brief = 'In the survey 70% asked for explanations.';
+    expect(node('c6', { teammateAt, brief }).score).toBeNull();
+    expect(node('c6', { teammateAt, openedAfterTeammate: ['survey'] }).score).toBeNull();
+    expect(node('c6', { teammateAt, brief, openedAfterTeammate: ['survey'] })).toMatchObject({ score: 2, dimension: 'Independent' });
+    expect(node('c6', { brief })).toMatchObject({ score: 2, dimension: 'Critical' });
   });
-});
-
-describe('correct claims', () => {
-  it('penalises rejecting the surprising but correct figure', () => {
-    expect(nodeOf(scoreSession(scenario, obs({ flagged: ['c5'] }), draft), 'c5').score).toBe(0);
-    expect(nodeOf(scoreSession(scenario, obs({ brief: '85% were never shown how to check.' }), draft), 'c5').score).toBe(2);
+  it('uses explicit decisions in normal chat without treating questions as rejections', () => {
+    const studentMessages = [{ role: 'user' as const, text: "I'll omit the Marlowe study.", ts: 2000 }];
+    expect(node('c3', { studentMessages, openedAfterDraft: { refs: 1 } }).score).toBe(2);
+    expect(node('c3', { studentMessages: [{ ...studentMessages[0], text: 'Is Marlowe wrong?' }] }).score).toBeNull();
+    expect(node('c6', { teammateAt: 1000, studentMessages: [{ ...studentMessages[0], text: 'The 70% figure is wrong.' }] }).score).toBe(0);
   });
-  it('scores the teammate node on checking, not on agreement', () => {
-    expect(nodeOf(scoreSession(scenario, obs({ flagged: ['c6'] }), draft), 'c6').score).toBe(0);
-    expect(nodeOf(scoreSession(scenario, obs({}), draft), 'c6').score).toBe(1);
-    const checked = nodeOf(scoreSession(scenario, obs({ openedAfterTeammate: ['survey'] }), draft), 'c6');
-    expect(checked.score).toBe(2);
-    expect(checked.dimension).toBe('Independent');
-  });
-  it('leaves full-mode-only claims out of judge mode', () => {
-    const r = scoreSession(scenario, obs({ mode: 'judge', teammateShown: false }), draft);
-    expect(r.nodes.map((n) => n.id)).not.toContain('c6');
-    expect(r.nodes.map((n) => n.id)).not.toContain('c1');
+  it('leaves full-mode-only claims out of quick mode', () => {
+    expect(result({ mode: 'judge' }).nodes.filter((item) => ['c1', 'c6'].includes(item.id))).toHaveLength(0);
+    expect(result({ mode: 'judge' }).nodes.filter((item) => item.flawed)).toHaveLength(3);
   });
 });
 
-describe('other nodes', () => {
-  it('rates the first instruction by how much it specifies', () => {
+describe('work products and percentages', () => {
+  it('scores observed criteria and excludes missing evidence from both totals', () => {
+    const r = result({ brief: 'The survey says 56% use AI weekly.', exposedClaimIds: [] });
+    expect(scoreTotal(r.nodes)).toEqual({ earned: 2, possible: 4, percentage: 50 });
+    expect(scoreTotal(r.nodes.filter((item) => item.dimension === 'Critical'))).toEqual({ earned: 0, possible: 0, percentage: null });
+    expect(scoreTotal(r.nodes.filter((item) => item.dimension === 'Effective')).percentage).toBe(0);
+    expect(scoreTotal(r.nodes.filter((item) => item.dimension === 'Independent')).percentage).toBeNull();
+  });
+  it('scores instructions that were observed and only quotes them with storage consent', () => {
+    const firstInstruction = 'Short paragraph for my supervisor about AI and learning, with sources and a private detail';
     expect(instructionScore('go')).toBe(0);
     expect(instructionScore('write about AI')).toBe(1);
-    expect(instructionScore('Short paragraph for my supervisor on AI and learning, with sources')).toBe(2);
+    expect(node('instruction', { firstInstruction })).toMatchObject({ score: 2 });
+    expect(node('instruction', { firstInstruction }).evidence).not.toContain('private detail');
+    expect(node('instruction', { firstInstruction, quoteInstruction: true }).evidence).toContain('private detail');
   });
-  it('measures word-for-word overlap with the draft', () => {
-    expect(overlap(draft, draft)).toBe(1);
-    expect(overlap('Completely different wording about something else entirely here.', draft)).toBe(0);
+  it('measures reuse against actual replies and keeps the guide-only signal', () => {
+    expect(overlap(draft, 'other reply', draft)).toBe(1);
+    expect(node('ownership', { brief: draft, assistantReplies: [draft] }).score).toBe(0);
+    expect(node('ownership', { brief: draft, ghostwriteRequested: true }).score).toBe(1);
+    expect(node('ownership', { brief: draft }).score).toBeNull();
   });
-  it('caps Responsible at Developing when a classmate name is shared', () => {
-    const brief = 'According to the week 8 survey, 56% use AI weekly.';
-    const clean = scoreSession(scenario, obs({ brief }), draft);
-    expect(dimOf(clean, 'Responsible').band).toBe('Proficient');
-    const leaked = scoreSession(scenario, obs({ brief, namesSentToAI: ['Tom Ellery'] }), draft);
-    expect(dimOf(leaked, 'Responsible').band).not.toBe('Proficient');
-    expect(nodeOf(scoreSession(scenario, obs({ brief, namesSentToAI: ['Tom Ellery', 'Leo Marsh'] }), draft), 'privacy').score).toBe(0);
+  it('only scores privacy if there is evidence of exposure or disclosure', () => {
+    expect(node('privacy', {}).score).toBeNull();
+    expect(node('privacy', { commentsOpened: true }).score).toBe(2);
+    expect(node('privacy', { namesSentToAI: ['Tom Ellery'] }).score).toBe(1);
+    expect(node('privacy', { namesSentToAI: ['Tom Ellery'], brief: 'LEO MARSH said this.' }).score).toBe(0);
   });
-  it('requires 2 data points and a student view for completion', () => {
-    const full = 'The week 8 survey shows 56% use AI weekly and 85% were never shown how to check. One student said it got a referencing rule wrong.';
-    expect(nodeOf(scoreSession(scenario, obs({ brief: full }), draft), 'completion').score).toBe(2);
-    expect(nodeOf(scoreSession(scenario, obs({ brief: full, overtime: true }), draft), 'completion').score).toBe(1);
-    expect(nodeOf(scoreSession(scenario, obs({ brief: 'AI is useful.' }), draft), 'completion').score).toBe(0);
+  it('recognises source-pack figures in quick mode and checks each attribution', () => {
+    const brief = 'The survey had 48 of 120 responses. The quiz means were 27.5 and 24.5.';
+    expect(node('sourcing', { mode: 'judge', brief }).score).toBe(2);
+    expect(node('sourcing', { brief: 'The survey had 48 of 120 responses. Mean scores were 27.5 and 24.5.' }).score).toBe(1);
+    expect(node('sourcing', { brief: 'The survey shows 65% use AI. A study found a 23% gain.' }).score).toBeNull();
   });
-});
-
-describe('headline and calibration', () => {
-  it('leads with the confidently wrong item', () => {
-    const r = scoreSession(scenario, obs({ brief: 'Marlowe and Quist found a 23% gain. The survey says 56% use AI weekly.', confidence: 0.9 }), draft);
-    expect(r.headline.kind).toBe('confident_wrong');
-    expect(r.headline.nodeId).toBe('c3');
-    expect(r.calibration.accuracy).toBe(0.5);
-    expect(r.calibration.overconfidence).toBeCloseTo(0.4);
+  it('checks supported data, a student view, length and timing', () => {
+    const brief = 'The survey shows 56% use AI weekly. Quiz averages were 27.5 and 24.5. One student said it got a referencing rule wrong.';
+    const full = brief + ' This difference is an association because the groups chose whether to use AI. The weekly users also attended more seminars on average. Attendance and other differences could account for their higher marks. The committee should treat the results as preliminary and ask how students are checking the explanations they receive when using these tools for coursework in this module.';
+    expect(node('completion', { brief: full }).score).toBe(2);
+    expect(node('completion', { brief: full, overtime: true }).score).toBe(1);
+    expect(node('completion', { brief }).score).toBe(1);
+    expect(node('completion', { brief: 'AI is useful.' }).score).toBe(0);
   });
-  it('praises the best call when nothing wrong was used', () => {
-    const r = scoreSession(scenario, obs({ brief: 'The survey says 56% use AI weekly.', openedAfterDraft: { survey: 40 } }), draft);
-    expect(r.headline.kind).toBe('best_call');
-    expect(r.calibration.accuracy).toBe(1);
-  });
-  it('gives at most three suggestions', () => {
-    expect(scoreSession(scenario, obs({}), draft).suggestions.length).toBeLessThanOrEqual(3);
+  it('prioritises feedback on an observed error and excludes unsupported criteria', () => {
+    const r = result({ brief: 'Marlowe and Quist found a 23% gain.' });
+    expect(r.suggestions[0]).toEqual(node('c3', { brief: '' }).advice);
+    expect(r.suggestions).not.toContain(node('privacy', {}).advice);
+    expect(r.suggestions.length).toBeLessThanOrEqual(3);
   });
 });
 
 describe('state machine', () => {
-  it('advances in order and rejects out-of-order moves', () => {
+  it('goes from work directly to results and accepts previously pending submissions', () => {
     expect(advance('intro', 'intro')).toBe('work');
-    expect(advance('work', 'work')).toBe('debrief');
+    expect(advance('work', 'work')).toBe('reveal');
+    expect(advance('debrief', 'debrief')).toBe('reveal');
     expect(() => advance('intro', 'work')).toThrow(StateError);
     expect(() => advance('reveal', 'reveal')).toThrow(StateError);
   });

@@ -20,11 +20,11 @@ export default function OpsPage() {
       <p className="muted">Last 24 hours. Refreshes every 5 seconds.</p>
       <div className="card">
         <h2>Guardrail triggers</h2>
-        {['pii', 'injection', 'ghostwrite'].map((k) => <p key={k}><b>{ops.guardrails[k] ?? 0}</b> {k === 'pii' ? 'personal data redactions' : k === 'injection' ? 'answer-key extraction attempts blocked' : 'switches to guide-only mode'}</p>)}
+        {['pii', 'injection', 'ghostwrite'].map((k) => <p key={k}><b>{ops.guardrails[k] ?? 0}</b> {k === 'pii' ? 'personal data redactions' : k === 'injection' ? 'possible requests for internal instructions' : 'requests for finished work'}</p>)}
       </div>
       <div className="card">
         <h2>Assistant replies</h2>
-        <p><b>{ops.replies.scripted}</b> pre-written, <b>{ops.replies.model}</b> live model, <b>{ops.replies.fallback}</b> fallback</p>
+        <p><b>{ops.replies.scripted}</b> pre-written, <b>{ops.replies.model}</b> live model, <b>{ops.replies.failed}</b> failed</p>
         <p>Time to first token: {stat(ops.modelFirstTokenMs)}</p>
         <p>Total response time: {stat(ops.modelTotalMs)}</p>
         {ops.errors.map((e, i) => <p key={i} className="error small">{e}</p>)}
