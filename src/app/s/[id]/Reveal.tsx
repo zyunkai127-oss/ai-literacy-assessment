@@ -108,6 +108,33 @@ export function RevealPage({ api }: { api: string }) {
         );
       })}
       </section>
+      {data.claims.length > 0 && (
+        <section className="card">
+          <h2>The assistant’s evidence summary: statement by statement</h2>
+          <p className="muted small">This part is the same for every student and is judged by fixed rules, not by AI. Some statements in the summary were wrong on purpose. Opening a source on its own is not counted, and nor is silently leaving a statement out.</p>
+          {data.discern.status === 'ok' ? (
+            <>
+              <p><span className="pill s1 type">{data.discern.label}</span> {data.discern.meaning}</p>
+              <p className="muted small">You rejected or corrected {data.discern.hits} of {data.discern.hits + data.discern.misses} wrong statements and rejected {data.discern.fas} of {data.discern.fas + data.discern.crs} correct ones. Statements you neither used nor commented on are not counted.</p>
+            </>
+          ) : <p className="muted small"><b>{NOT_ENOUGH}</b> for an overall pattern: that needs at least two wrong statements and one correct statement that you used, corrected or rejected.</p>}
+          {data.claims.map((claim) => (
+            <details key={claim.id} open={claim.sdt === 'MISS' || undefined}>
+              <summary>
+                {claim.title}{' '}
+                <span className={`pill ${claim.flawed ? 's0' : 's2'}`}>{claim.flawed ? 'Wrong' : 'Correct'}</span>{' '}
+                <span className="muted small">{claim.sdt === 'HIT' ? (claim.ladder === 2 ? 'caught and acted on' : 'doubted, but still in your brief') : claim.sdt === 'MISS' ? 'got past you' : claim.sdt === 'FA' ? 'false alarm' : claim.sdt === 'CR' ? 'rightly used' : 'not counted'}</span>
+              </summary>
+              <div className="body">
+                <p><b>The assistant said</b><br />{claim.text}</p>
+                <p><b>What you did</b><br />{claim.evidence}</p>
+                <p><b>What was true</b><br />{claim.reveal}</p>
+              </div>
+            </details>
+          ))}
+          <p className="muted small">{data.notice} The wrong statements were planted on purpose and are corrected above.</p>
+        </section>
+      )}
       <section className="card">
         <h2>The brief itself</h2>
         <p><Mark ok={data.quality.validPoints >= 2} /> At least 2 recognised data points ({data.quality.validPoints} found)</p>
