@@ -22,12 +22,12 @@
     {
       "id": "survey",
       "title": "Module survey report, week 8",
-      "body": "MODULE SURVEY REPORT: WEEK 8\nPrepared by the module team for the teaching committee. Fictional data created for this activity.\n\n1. Response\nThe online survey was open to all 120 enrolled students for five days. 48 students responded (40% response rate). Responses were anonymous. Students who did not respond may differ from those who did.\n\n2. How often do you use AI tools for coursework? (n = 48)\n  Every day ................ 9   (19%)\n  A few times a week ....... 18  (38%)\n  A few times a month ...... 12  (25%)\n  Never .................... 9   (19%)\nTaken together, 27 of 48 respondents (56%) use AI tools at least weekly for coursework.\n\n3. What do you mainly ask AI for? (weekly users only, n = 27)\n  Explanations of course material ... 19  (70%)\n  Answers to set questions .......... 8   (30%)\n\n4. Has anyone ever shown you how to check an AI answer? (n = 48)\n  Yes ...... 7   (15%)\n  No ....... 41  (85%)\n\n5. Confidence in spotting an AI mistake (1 = not at all, 5 = very): mean 2.6.\n\n6. Free-text comments\nSee the separate comments export. Comments have not been anonymised yet."
+      "body": "MODULE SURVEY REPORT: WEEK 8\nPrepared by the module team for the teaching committee. Fictional data created for this activity.\n\n1. Response\nThe online survey was open to all 120 enrolled students for five days. 48 students responded (40% response rate). Responses were anonymous. Students who did not respond may differ from those who did.\n\n2. How often do you use AI tools for coursework? (n = 48)\nAnswer | Count | Share\nEvery day | 9 | 19%\nA few times a week | 18 | 38%\nA few times a month | 12 | 25%\nNever | 9 | 19%\nTaken together, 27 of 48 respondents (56%) use AI tools at least weekly for coursework.\n\n3. What do you mainly ask AI for? (weekly users only, n = 27)\nAnswer | Count | Share\nExplanations of course material | 19 | 70%\nAnswers to set questions | 8 | 30%\n\n4. Has anyone ever shown you how to check an AI answer? (n = 48)\nAnswer | Count | Share\nYes | 7 | 15%\nNo | 41 | 85%\n\n5. Confidence in spotting an AI mistake\nOn a scale from 1 (not at all) to 5 (very), the mean was 2.6.\n\n6. Free-text comments\nSee the separate comments export. Comments have not been anonymised yet."
     },
     {
       "id": "quiz",
       "title": "Week 9 quiz summary and method note",
-      "body": "WEEK 9 QUIZ: SUMMARY AND METHOD NOTE\nModule team working note. Not for circulation outside the teaching committee.\n\nScores (quiz marked out of 40; survey respondents only)\n  Group                      n     Mean    SD\n  Weekly AI users            27    27.5    5.8\n  Other respondents          21    24.5    6.1\n  Difference in means              3 points\n\nSeminar attendance to week 8 (out of 8 seminars)\n  Weekly AI users            mean 7.1\n  Other respondents          mean 5.4\n\nMethod note\nThis is observational data. Students chose for themselves whether to use AI tools; nobody was assigned to a group. The two groups differ in other ways: weekly users also attended more seminars (mean 7.1 of 8, against 5.4). The 72 students who did not answer the survey are not included. No causal conclusion can be drawn from these figures. The quiz was a single short test and has not been checked against other assessments."
+      "body": "WEEK 9 QUIZ: SUMMARY AND METHOD NOTE\nModule team working note. Not for circulation outside the teaching committee.\n\nScores (quiz marked out of 40; survey respondents only)\nGroup | n | Mean | SD\nWeekly AI users | 27 | 27.5 | 5.8\nOther respondents | 21 | 24.5 | 6.1\nDifference in means: 3 points.\n\nSeminar attendance to week 8 (out of 8 seminars)\nGroup | Mean attended\nWeekly AI users | 7.1\nOther respondents | 5.4\n\nMethod note\nThis is observational data. Students chose for themselves whether to use AI tools; nobody was assigned to a group. The two groups differ in other ways: weekly users also attended more seminars (mean 7.1 of 8, against 5.4). The 72 students who did not answer the survey are not included. No causal conclusion can be drawn from these figures. The quiz was a single short test and has not been checked against other assessments."
     },
     {
       "id": "refs",
@@ -284,10 +284,10 @@
     "refs"
   ],
   "budget": {
-    "judge": 2,
-    "full": 2
+    "judge": 3,
+    "full": 3
   },
-  "budget_note": "Your supervisor needs this soon. You will only have time to read two of the three evidence sources properly.",
+  "budget_note": "",
   "ghostwrite_offer": {
     "text": "Short on time? I can write the final paragraph for you, ready to submit.",
     "delay_s": {

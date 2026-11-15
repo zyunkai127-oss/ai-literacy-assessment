@@ -1,4 +1,5 @@
 'use client';
+import { Restart } from './Restart';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { countWords, errorOf, mmss, post, type PublicMsg, type View } from './shared';
 
@@ -7,6 +8,27 @@ const NOTICE: Record<string, string> = {
   injection: 'That message was not sent to the assistant. It cannot discuss how this activity is set up.',
   ghostwrite: 'The final paragraph has to be in your own words, so the assistant will now guide rather than write.',
 };
+
+/** Source text with simple tables: consecutive lines containing " | " become a table whose first row is the header. */
+function PackBody({ text }: { text: string }) {
+  const blocks: { table: boolean; lines: string[] }[] = [];
+  for (const line of text.split('\n')) {
+    const table = line.includes(' | ');
+    const last = blocks[blocks.length - 1];
+    if (last && last.table === table) last.lines.push(line);
+    else blocks.push({ table, lines: [line] });
+  }
+  return (
+    <div className="body">
+      {blocks.map((block, i) => block.table ? (
+        <table key={i} className="packtable">
+          <thead><tr>{block.lines[0].split(' | ').map((cell, j) => <th key={j}>{cell}</th>)}</tr></thead>
+          <tbody>{block.lines.slice(1).map((row, r) => <tr key={r}>{row.split(' | ').map((cell, j) => <td key={j}>{cell}</td>)}</tr>)}</tbody>
+        </table>
+      ) : <div key={i}>{block.lines.join('\n')}</div>)}
+    </div>
+  );
+}
 
 export function Work({ view, api, onDone }: { view: View; api: string; onDone: () => void }) {
   const { scenario } = view;
@@ -22,7 +44,6 @@ export function Work({ view, api, onDone }: { view: View; api: string; onDone: (
   const [submitting, setSubmitting] = useState(false);
   const [opened, setOpened] = useState<Record<string, string>>(view.opened);
   const [remaining, setRemaining] = useState(view.remaining);
-  const [opening, setOpening] = useState<string | null>(null);
   const [draftShownAt, setDraftShownAt] = useState<number | null>(view.draftShownAt);
   const [offerShown, setOfferShown] = useState(view.offerShown);
   const events = useRef(Promise.resolve());
@@ -87,8 +108,7 @@ export function Work({ view, api, onDone }: { view: View; api: string; onDone: (
   }, [api, draftShownAt, offerShown, submitting, scenario.offerDelay]);
 
   async function openSource(section: string) {
-    if (opening) return;
-    setOpening(section);
+    // Sources can be opened in any order and at the same time: there is no reading limit.
     setError('');
     try {
       const res = await post(`${api}/event`, { type: 'pack_open', section });
@@ -99,7 +119,6 @@ export function Work({ view, api, onDone }: { view: View; api: string; onDone: (
     } catch {
       setError('That source could not be opened.');
     }
-    setOpening(null);
   }
 
   async function send() {
@@ -170,7 +189,7 @@ export function Work({ view, api, onDone }: { view: View; api: string; onDone: (
   return (
     <div className="work">
       <div className="topbar">
-        <b>{scenario.task.title}</b>
+        <span className="title"><b>{scenario.task.title}</b><Restart /></span>
         <span className="muted small">{left <= 0 ? 'Time is up. Submit your brief now.' : 'Time left'}</span>
         <span className={`timer ${left < 60 ? 'low' : ''}`}>{mmss(Math.max(0, left))}</span>
       </div>
@@ -182,31 +201,21 @@ export function Work({ view, api, onDone }: { view: View; api: string; onDone: (
               <summary>Project requirements</summary>
               <div className="body">{scenario.task.prompt}{'\n\n'}{scenario.task.requirements.map((r) => `• ${r}`).join('\n')}</div>
             </details>
-            <p className="notice budget">{scenario.budgetNote}</p>
             {scenario.pack.map((item) => {
               if (!item.locked) {
                 return (
                   <details key={item.id} onToggle={(event) => { if (event.currentTarget.open) record({ type: 'pack_open', section: item.id }); }}>
                     <summary>{item.title}</summary>
-                    <div className="body">{item.body}</div>
+                    <PackBody text={item.body ?? ''} />
                   </details>
                 );
               }
-              if (opened[item.id] !== undefined) {
-                return (
-                  <details key={item.id} open>
-                    <summary>{item.title}</summary>
-                    <div className="body">{opened[item.id]}</div>
-                  </details>
-                );
-              }
+              // Evidence sources: the text is fetched from the server the first time the section is opened, which also logs the open.
               return (
-                <div key={item.id} className="locked">
-                  <span>{item.title}</span>
-                  {remaining > 0
-                    ? <button className="small" disabled={submitting || opening !== null} onClick={() => openSource(item.id)}>Open source ({remaining} of {scenario.budget} left)</button>
-                    : <span className="muted small">No time left to read this source</span>}
-                </div>
+                <details key={item.id} onToggle={(event) => { if (event.currentTarget.open && opened[item.id] === undefined) openSource(item.id); }}>
+                  <summary>{item.title}</summary>
+                  {opened[item.id] !== undefined ? <PackBody text={opened[item.id]} /> : <div className="body muted">Loading</div>}
+                </details>
               );
             })}
           </div>

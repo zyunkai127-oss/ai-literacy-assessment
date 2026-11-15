@@ -1,4 +1,5 @@
 'use client';
+import { Restart } from './Restart';
 import { useState } from 'react';
 import type { Decision, Declared } from '@/lib/types';
 import { errorOf, post, type View } from './shared';
@@ -44,6 +45,7 @@ function Questions({ view, api, onDone }: { view: View; api: string; onDone: () 
 
   return (
     <main className="wrap">
+      <p className="backlink"><Restart /></p>
       <h1>Your supervisor has a few questions</h1>
       <p className="muted">Brief submitted. This takes about 20 seconds.</p>
 
@@ -121,6 +123,7 @@ function Viva({ view, api, onDone }: { view: View; api: string; onDone: () => vo
 
   return (
     <main className="wrap">
+      <p className="backlink"><Restart /></p>
       <h1>One follow-up question</h1>
       <div className="card">
         <p><b>{view.viva?.question ?? 'How did you decide what to keep from the assistant’s summary?'}</b></p>

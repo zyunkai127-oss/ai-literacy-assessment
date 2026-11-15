@@ -13,7 +13,7 @@ A student completes one small, timed piece of work with an AI research assistant
 - **The first task instruction returns a pre-written research summary.** Its statements are listed one by one with Insert buttons. Three are wrong (an altered figure, an invented reference, a causal claim the data cannot support) and the rest are correct, including one that looks suspicious but is right. Every student sees the same statements.
 - **Doubting a specific statement gets a pre-written reply in which the assistant stands by it**, right or wrong.
 - **Everything else is free chat with a live model.** The model sees the task, the anonymised survey comments and the summary it "wrote". It does not see the three evidence sources, so asking it is not a free way to verify.
-- **Reading is limited.** Only two of the three evidence sources can be opened, so the student has to choose what to check.
+- **All three evidence sources can be read.** They are written as documents (a survey report, a quiz note with a method note, a reading list), so checking a statement means finding it. Which sources were opened, and when, is logged.
 - **Later the assistant offers to write the final paragraph**, which the assignment does not allow. If the student accepts, it does write one: a pre-written paragraph built from its own summary, wrong statements included. What counts is whether that wording is handed in, not whether the student said yes.
 - After submitting, a **one-screen debrief** asks, for each statement, Relied on it / Not sure / Didn't rely on it (at most two "Not sure"), overall confidence, and who wrote most of the wording. The full version adds one follow-up question chosen from those answers.
 
@@ -87,7 +87,7 @@ docs/                     scoring spec, model rationale, refactor guide, merge d
 | `GET /api/sessions/:id` | Session as the browser may see it: messages, statements once the summary has appeared, opened evidence, remaining budget, the follow-up question when in `viva` |
 | `POST /api/sessions/:id/start` | Start the clock |
 | `POST /api/sessions/:id/chat` | Send a message. Responds with a server-sent event stream (`guardrail`, `delta`, `message`, `error`, `done`). Returns 503 only when the message needs free chat and no model is configured |
-| `POST /api/sessions/:id/event` | `pack_open` returns `{ok, body, remaining}`; a new evidence source beyond the budget returns 409 `{error: "budget", remaining: 0}`. `draft` stores an editor snapshot |
+| `POST /api/sessions/:id/event` | `pack_open` returns `{ok, body, remaining}`; the budget is currently set to all three sources, so nothing is blocked; a lower `budget` in `data/scenario.json` would return 409 `{error: "budget", remaining: 0}`. `draft` stores an editor snapshot |
 | `POST /api/sessions/:id/scripted` | Delivers the assistant's timed offer once, when due |
 | `POST /api/sessions/:id/submit` | Submit the brief. Moves to `debrief` |
 | `POST /api/sessions/:id/debrief` | Body: `{decisions: {claimId: "relied" \| "unsure" \| "not"}, confidence: 0-100, declared: "MINE" \| "MIXED" \| "AI"}`. Quick version: scores and moves to `reveal`. Full version: returns the follow-up question and moves to `viva` |

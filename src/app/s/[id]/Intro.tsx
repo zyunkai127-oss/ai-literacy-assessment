@@ -1,4 +1,5 @@
 'use client';
+import { Restart } from './Restart';
 import { useState } from 'react';
 import { errorOf, mmss, post, type View } from './shared';
 
@@ -23,6 +24,7 @@ export function Intro({ view, api, onStart }: { view: View; api: string; onStart
 
   return (
     <main className="wrap">
+      <p className="backlink"><Restart /></p>
       <h1>{task.title}</h1>
       <div className="card">
         <h2>Project Introduction</h2>
