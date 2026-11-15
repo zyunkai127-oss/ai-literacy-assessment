@@ -152,3 +152,28 @@ describe('actual conversation order and distinctive wording', () => {
     expect(statusFor('ownership', { brief: 'Please check the source.', assistantReplies: ['Please check the source.'], declared: 'MINE' })).toBe('insufficient');
   });
 });
+
+describe('anchor: the pre-written evidence summary in live mode', () => {
+  const brief = 'The week 8 survey found 65% of respondents use AI weekly, and 85% said nobody had shown them how to check an AI answer. Marlowe & Quist (2031) found a 23% gain.';
+  it('is absent when the summary was never shown', () => {
+    const r = scoreCollaboration(scenario, observation({ brief }));
+    expect(r.claims).toEqual([]);
+    expect(r.discern.status).toBe('insufficient');
+  });
+  it('codes the statements by rule when the summary was shown', () => {
+    const r = scoreCollaboration(scenario, observation({ brief, draftShown: true }));
+    const sdt = Object.fromEntries(r.claims.map((c) => [c.id, c.sdt]));
+    expect(sdt).toMatchObject({ c2: 'MISS', c3: 'MISS', c5: 'CR' });
+    expect(r.discern.type).toBe('CREDULOUS');
+    expect(r.collaboration).toHaveLength(6);
+  });
+  it('counts a corrected figure and a rejection written in the chat', () => {
+    const r = scoreCollaboration(scenario, observation({
+      draftShown: true, studentMessages: ['The Marlowe study is made up, I will leave it out.'],
+      brief: 'The week 8 survey found 56% of respondents use AI weekly, and 85% said nobody had shown them how to check an AI answer.',
+    }));
+    const c = Object.fromEntries(r.claims.map((x) => [x.id, x]));
+    expect([c.c2.sdt, c.c2.ladder, c.c3.sdt, c.c5.sdt]).toEqual(['HIT', 2, 'HIT', 'CR']);
+    expect(r.discern.type).toBe('CALIBRATED');
+  });
+});
