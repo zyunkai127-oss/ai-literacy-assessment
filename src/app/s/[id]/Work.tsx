@@ -165,7 +165,7 @@ export function Work({ view, api, onDone }: { view: View; api: string; onDone: (
       </div>
       <div className="cols">
         <section className="col references" aria-label="Project references">
-          <h2>Project references</h2>
+          <h2><span className="panel-index">01 /</span>Project references</h2>
           <div className="scroll">
             <details>
               <summary>Project requirements</summary>
@@ -192,9 +192,9 @@ export function Work({ view, api, onDone }: { view: View; api: string; onDone: (
         </section>
 
         <section className="col">
-          <h2>AI Chat</h2>
+          <h2><span className="panel-index">02 /</span>AI Chat</h2>
           <div className="scroll" aria-live="polite">
-            {messages.length === 0 && !busy && <p className="muted">The assistant has all the sources and task requirements. Tell it what you want help with.</p>}
+            {messages.length === 0 && !busy && <div className="workspace-empty"><h3>A second perspective.</h3><p className="muted">The assistant has all the sources and task requirements. Tell it what you want help with.</p><p className="muted small">You decide what to keep, check or question.</p></div>}
             {messages.map((m, i) => {
               const [intro, , outro] = m.claims ? m.text.split('\n\n') : [m.text];
               return (
@@ -225,7 +225,7 @@ export function Work({ view, api, onDone }: { view: View; api: string; onDone: (
         </section>
 
         <section className="col">
-          <h2>Brief editor</h2>
+          <h2><span className="panel-index">03 /</span>Brief editor</h2>
           <textarea aria-label="Brief" className="brief" maxLength={6000} disabled={submitting} value={brief} placeholder="Write your briefing paragraph here." onChange={(e) => setBrief(e.target.value)} />
           <div className="row" style={{ justifyContent: 'space-between', marginTop: 10 }}>
             <span className="muted small">{words} words · 80–150 required</span>
