@@ -30,3 +30,5 @@
 .composer{border:1px solid #bac4b7;border-radius:14px;margin:.6rem;display:flex;gap:.4rem;align-items:flex-end;padding:.45rem;background:white}
 .secondary .composer #question{border:0;background:transparent;min-height:2.5rem;margin:0;padding:.45rem;resize:vertical}
 .composer button{border-radius:50%;width:2.5rem;height:2.5rem;flex-shrink:0;background:#203b26;color:white;padding:0;font-size:1.35rem}
+
+.chat-model{display:block;margin:.7rem 1.25rem 0;color:#536054;overflow-wrap:anywhere}

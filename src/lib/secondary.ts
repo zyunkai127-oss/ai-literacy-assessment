@@ -31,5 +31,10 @@ export const dimensions = {
   responsible: 'Responsible use',
   bonus: 'Bonus · Managing AI'
 };
-export type Rating = { level: 'Great' | 'Fair' | 'Need Work' | 'Not enough evidence'; comment: string; quote: string };
+export type Rating = { level: 'Great' | 'Fair' | 'Need Work' | 'Not enough evidence'; comment: string; tasks?: Record<"essay" | "science", { detail: string; quote: string }> };
 export type Ratings = Record<keyof typeof dimensions, Rating>;
+
+export function hasTaskFeedback(ratings?: Ratings) {
+  return !!ratings && (Object.keys(dimensions) as (keyof Ratings)[]).every(key =>
+    ratings[key]?.tasks?.essay && ratings[key]?.tasks?.science);
+}

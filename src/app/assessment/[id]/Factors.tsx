@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { dimensions, type Ratings } from '@/lib/secondary';
+import { dimensions, hasTaskFeedback, type Ratings } from '@/lib/secondary';
 
 export function Factors({url, saved}: {url:string; saved?:Ratings}) {
-  const [ratings,setRatings] = useState(saved);
+  const [ratings,setRatings] = useState(hasTaskFeedback(saved) ? saved : undefined);
   const [error,setError] = useState(false);
   const [attempt,retry] = useState(0);
   useEffect(()=>{
-    if (saved) return;
+    if (hasTaskFeedback(saved)) return;
     let active = true;
     fetch(url+'/feedback',{method:'POST'}).then(async res=>{
       if (!res.ok) throw Error();
@@ -20,9 +20,13 @@ export function Factors({url, saved}: {url:string; saved?:Ratings}) {
     {(Object.keys(dimensions) as (keyof Ratings)[]).map(key=>{
       const row=ratings?.[key];
       const style=row && {'Great':'supported','Fair':'insufficient','Need Work':'practise','Not enough evidence':'neutral'}[row.level];
-      return <details key={key} className="report-factor"><summary><span>{dimensions[key]}<small className="factor-subtitle">{row?.comment}</small></span>
+      return <details key={key} className="report-factor"><summary><span>{dimensions[key]}<small className="factor-subtitle">{row?.tasks && row.comment}</small></span>
         <span className={'factor-status '+(style || 'neutral')}>{row?.level ?? (error?'Unavailable':'Reviewing…')}</span></summary>
-        <div className="factor-detail">{row?.quote ? <><h3>From your work</h3><blockquote>{row.quote}</blockquote></> : <p>{row ? 'No specific passage was identified for this dimension.' : 'Your session evidence is available below.'}</p>}</div>
+        <div className="factor-detail">{row?.tasks && (['essay','science'] as const).map(task=>{
+          const item = row.tasks![task];
+          return <section key={task}><h3>{task === 'essay' ? 'Dramatic Moments · Essay' : 'Wind Farm Site · Science'}</h3>
+            <p>{item.detail}</p>{item.quote && <blockquote>{item.quote}</blockquote>}</section>;
+        })}</div>
       </details>;
     })}
   </section>;

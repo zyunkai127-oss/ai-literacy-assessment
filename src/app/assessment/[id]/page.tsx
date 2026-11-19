@@ -10,7 +10,7 @@ import './activity.css';
 export default function AssessmentPage({ params }: { params: Promise<{id:string}> }) {
   const { id } = use(params);
   const url = '/api/assessment/' + id;
-  const [data, setData] = useState<Assessment | null>(null);
+  const [data, setData] = useState<(Assessment & { chatModel: string }) | null>(null);
   const [work, setWork] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState('');
@@ -70,7 +70,7 @@ export default function AssessmentPage({ params }: { params: Promise<{id:string}
         <label htmlFor="work">{science ? 'Write your choice and supporting evidence.' : revision ? 'Keep or change your argument after discussing it.' : 'Write your response. AI discussion opens after you submit this draft.'}</label>
         <textarea id="work" maxLength={12000} value={work} disabled={!!busy} onChange={e=>{setWork(e.target.value);sessionStorage.setItem(key(data.stage),e.target.value);}}/>
         <button className="primary" disabled={!!busy || !work.trim()} onClick={()=>send('submit')}>{busy==='submit' ? 'Saving…' : science ? 'Submit and view feedback' : revision ? 'Submit essay and start science' : 'Submit draft and open discussion'}</button>
-      </section>{(revision || science) && <Chat messages={chat} value={message} change={setMessage} busy={busy} send={()=>send('chat')}/>}</div>
+      </section>{(revision || science) && <Chat model={data.chatModel} messages={chat} value={message} change={setMessage} busy={busy} send={()=>send('chat')}/>}</div>
     </>}
     {error && <p role="alert" className="error">{error}</p>}
   </main>;

@@ -14,14 +14,15 @@ function mathDelimiters(text: string) {
 }
 export function Transcript({messages}: {messages: Msg[]}) {
   return <>{messages.map((m,i)=><div key={i} className={'chat-turn '+m.role}>
-    <small>{m.role==='user' ? 'You' : 'AI assistant'}</small><div className="bubble">
+    <small>{m.role==='user' ? 'You' : m.model ? 'AI assistant · '+m.model : 'AI assistant'}</small><div className="bubble">
     {m.role==='assistant' ? <Markdown remarkPlugins={[remarkGfm,remarkMath]} rehypePlugins={[rehypeKatex]} disallowedElements={['img']}>{mathDelimiters(m.text)}</Markdown> : m.text}
     </div></div>)}</>;
 }
-export function Chat({messages,value,change,send,busy}: {messages:Msg[];value:string;change:(s:string)=>void;send:()=>void;busy:string}) {
+export function Chat({model,messages,value,change,send,busy}: {model:string;messages:Msg[];value:string;change:(s:string)=>void;send:()=>void;busy:string}) {
   const log=useRef<HTMLDivElement>(null);
   useEffect(()=>{if(log.current) log.current.scrollTop=log.current.scrollHeight;},[messages.length,busy]);
   return <section className="panel ai-chat"><h2><span aria-hidden="true">✳</span> AI discussion</h2>
+    <small className="chat-model">Model · {model}</small>
     <div className="chat-log" role="log" aria-label="Discussion messages" ref={log}>
       {!messages.length && !busy && <p className="chat-empty">Ask a question about your work.</p>}
       <Transcript messages={messages}/>
