@@ -26,7 +26,7 @@ export function Intro({ view, api, onStart }: { view: View; api: string; onStart
   return (
     <main className="wrap intro-page">
       <div className="intro-header"><Brand /><Restart /></div>
-      <div className="intro-heading"><p className="eyebrow">Your next small challenge</p><h1>{task.title}</h1></div>
+      <div className="intro-heading"><h1>{task.title}</h1></div>
       <div className="intro-grid">
         <div>
           <div className="card">
@@ -45,10 +45,9 @@ export function Intro({ view, api, onStart }: { view: View; api: string; onStart
           </div>
         </div>
         <section className="card intro-start">
-          <h2>Room to think</h2>
+          <h2>Your activity</h2>
           <span className="intro-duration">{mmss(timeLimit)}</span>
           <p>The clock starts when you begin. Your sources, AI assistant and brief editor will open together.</p>
-          <p className="small">Read. Ask. Check. Make it yours.</p>
           <button className="primary" disabled={busy} onClick={start}>{busy ? 'Opening your workspace…' : 'Start assessment'}<Arrow /></button>
           {error && <p role="alert" className="error">{error}</p>}
         </section>

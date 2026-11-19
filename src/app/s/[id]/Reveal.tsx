@@ -70,7 +70,7 @@ export function RevealPage({ api }: { api: string }) {
     <main className="wrap session-report">
       <header className="report-overview">
         <div className="report-dial" aria-label={checksMet + ' of 5 brief checks met'}>
-          <div className="dial-track" aria-hidden="true" style={{background: `conic-gradient(from 270deg at 50% 100%, ${briefChecks.map((ok, i) => `${ok ? '#286950' : '#d4dad8'} ${i * 36}deg ${(i + 1) * 36 - 2}deg, white 0 ${(i + 1) * 36}deg`).join(', ')}, transparent 0)`}} />
+          <div className="dial-track" aria-hidden="true" style={{background: `conic-gradient(from 270deg at 50% 100%, ${briefChecks.map((ok, i) => `${ok ? 'var(--accent)' : 'var(--line)'} ${i * 36}deg ${(i + 1) * 36 - 2}deg, white 0 ${(i + 1) * 36}deg`).join(', ')}, transparent 0)`}} />
           <strong>{checksMet}<small> / 5</small></strong><span>Brief checks met</span>
         </div>
         <div><p className="report-kicker">Session feedback</p><h1>{focus}</h1>
