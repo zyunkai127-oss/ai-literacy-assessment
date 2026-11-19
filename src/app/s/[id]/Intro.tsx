@@ -2,6 +2,7 @@
 import { Restart } from './Restart';
 import { useState } from 'react';
 import { errorOf, mmss, post, type View } from './shared';
+import { Arrow, Brand } from '../../ui';
 
 // The source pack is not shown here: it opens only once the clock is running.
 export function Intro({ view, api, onStart }: { view: View; api: string; onStart: () => void }) {
@@ -23,29 +24,35 @@ export function Intro({ view, api, onStart }: { view: View; api: string; onStart
   }
 
   return (
-    <main className="wrap">
-      <p className="backlink"><Restart /></p>
-      <h1>{task.title}</h1>
-      <div className="card">
-        <h2>Project Introduction</h2>
-        <p>{task.prompt}</p>
-        <p className="muted small">{notice}</p>
+    <main className="wrap intro-page">
+      <div className="intro-header"><Brand /><Restart /></div>
+      <div className="intro-heading"><p className="eyebrow">Your next small challenge</p><h1>{task.title}</h1></div>
+      <div className="intro-grid">
+        <div>
+          <div className="card">
+            <h2>Project Introduction</h2>
+            <p>{task.prompt}</p>
+            <p className="muted small">{notice}</p>
+          </div>
+          <div className="card">
+            <h2>Project Requirements</h2>
+            <ul>{task.requirements.map((requirement) => <li key={requirement}>{requirement}</li>)}</ul>
+          </div>
+          <div className="card">
+            <h2>Expected Deliverables</h2>
+            <p>One 80–150-word briefing paragraph for your supervisor and the teaching committee.</p>
+            <p className="muted small">After you submit, your supervisor has a few quick questions about how you worked.</p>
+          </div>
+        </div>
+        <section className="card intro-start">
+          <h2>Room to think</h2>
+          <span className="intro-duration">{mmss(timeLimit)}</span>
+          <p>The clock starts when you begin. Your sources, AI assistant and brief editor will open together.</p>
+          <p className="small">Read. Ask. Check. Make it yours.</p>
+          <button className="primary" disabled={busy} onClick={start}>{busy ? 'Opening your workspace…' : 'Start assessment'}<Arrow /></button>
+          {error && <p role="alert" className="error">{error}</p>}
+        </section>
       </div>
-      <div className="card">
-        <h2>Project Requirements</h2>
-        <ul>{task.requirements.map((requirement) => <li key={requirement}>{requirement}</li>)}</ul>
-      </div>
-      <div className="card">
-        <h2>Expected Deliverables</h2>
-        <p>One 80–150-word briefing paragraph for your supervisor and the teaching committee.</p>
-        <p className="muted small">After you submit, your supervisor has a few quick questions about how you worked.</p>
-      </div>
-      <section className="card">
-        <h2>Start Assessment</h2>
-        <p>You have <b>{mmss(timeLimit)}</b>. The clock starts when you begin, and the source pack opens then.</p>
-        <button className="primary" disabled={busy} onClick={start}>Start assessment</button>
-        {error && <p role="alert" className="error">{error}</p>}
-      </section>
     </main>
   );
 }
