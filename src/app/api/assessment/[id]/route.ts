@@ -32,7 +32,10 @@ export async function POST(req: Request, ctx: Context) {
     history.push({ role: 'user', text, ts: Date.now() });
     activeChats.add(id);
     try {
-      const stream = streamReply(history, prompt);
+      const modelHistory = prompt.studentWork
+        ? [...history.slice(0, -1), { ...history[history.length - 1], text: prompt.studentWork + '\nStudent message:\n' + text }]
+        : history;
+      const stream = streamReply(modelHistory, prompt.system);
       let part = await stream.next();
       let reply = '';
       while (!part.done) { reply += part.value; part = await stream.next(); }
