@@ -31,7 +31,18 @@ export const dimensions = {
   responsible: 'Responsible use',
   bonus: 'Bonus · Managing AI'
 };
-export type Rating = { level: 'Great' | 'Fair' | 'Need Work' | 'Not enough evidence'; comment: string; tasks?: Record<"essay" | "science", { detail: string; quote: string }> };
+type TaskFeedback = {
+  detail: string;
+  quote: string;
+  draftQuote?: string;
+  revisionQuote?: string;
+};
+export type Rating = {
+  level: 'Great' | 'Fair' | 'Need Work' | 'Not enough evidence';
+  comment: string;
+  next?: string;
+  tasks?: Record<'essay' | 'science', TaskFeedback>;
+};
 export type Ratings = Record<keyof typeof dimensions, Rating>;
 
 export function hasTaskFeedback(ratings?: Ratings) {

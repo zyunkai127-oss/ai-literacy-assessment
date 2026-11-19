@@ -1,11 +1,10 @@
-import pack from '@/lib/wind-pack.json';
-import { readFile } from 'node:fs/promises';
 import { json, fail } from '@/lib/api';
 import { activeChats } from '@/lib/chatlock';
 import { chatModelId, streamReply } from '@/lib/llm';
-import { summariseWindLog } from '@/lib/wind-log';
+import { collaboratorPersona } from '@/lib/assessment-personas';
+import { scienceMaterials } from '@/lib/science-materials';
 import { activityContext } from '@/lib/activity-context';
-import { essayPrompt, essayQuestion, windEvidence, windQuestion } from '@/lib/secondary';
+import { essayPrompt, essayQuestion } from '@/lib/secondary';
 import { readAssessment, updateAssessment } from '@/lib/store';
 type Context = { params: Promise<{ id: string }> };
 export async function GET(_: Request, ctx: Context) {
@@ -25,21 +24,13 @@ export async function POST(req: Request, ctx: Context) {
     data[data.stage] = text;
     data.stage = { draft: 'revision', revision: 'science', science: 'feedback' }[data.stage] as typeof data.stage;
   } else if (input.action === 'chat' && data.stage !== 'draft') {
-    const history = data.stage === 'revision' ? data.discussion : data.comparison;
-    let context = [windQuestion, ...windEvidence];
-    if (data.stage === 'revision') {
-      context = [essayPrompt, essayQuestion];
-    } else if (data.windPack === 2) {
-      const csv = await readFile(process.cwd() + '/public/wind/station-log.csv', 'utf8');
-      context = [
-        pack.context,
-        'Distinguish a comparison threshold from a measured turbine cut-in speed. The windmill test reports voltage; it does not establish a cut-in speed or energy yield.',
-        summariseWindLog(csv),
-        'station-log.csv (original public station log, UTC, knots)',
-        csv,
-      ];
-    }
-    const prompt = activityContext(context, data.stage === 'revision' ? data.draft : undefined, typeof input.work === 'string' ? input.work : undefined);
+    const humanities = data.stage === 'revision';
+    const history = humanities ? data.discussion : data.comparison;
+    const context = humanities
+      ? ['Current task: HUMANITIES MODE', essayPrompt, essayQuestion]
+      : ['Current task: SCIENCE MODE', ...await scienceMaterials(data.windPack)];
+    const work = typeof input.work === 'string' ? input.work : undefined;
+    const prompt = activityContext([collaboratorPersona, ...context], humanities ? data.draft : undefined, work);
     history.push({ role: 'user', text, ts: Date.now() });
     activeChats.add(id);
     try {
@@ -47,7 +38,7 @@ export async function POST(req: Request, ctx: Context) {
         ? [...history.slice(0, -1), { ...history[history.length - 1], text: prompt.studentWork + '\nStudent message:\n' + text }]
         : history;
       const stream = streamReply(modelHistory, prompt.system, {
-        disableThinking: data.stage === 'science' && data.windPack === 2,
+        thinking: data.stage === 'science' && data.windPack === 2 ? 'disabled' : undefined,
       });
       let part = await stream.next();
       let reply = '';

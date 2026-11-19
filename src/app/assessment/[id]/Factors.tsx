@@ -25,8 +25,13 @@ export function Factors({url, saved}: {url:string; saved?:Ratings}) {
         <div className="factor-detail">{row?.tasks && (['essay','science'] as const).map(task=>{
           const item = row.tasks![task];
           return <section key={task}><h3>{task === 'essay' ? 'Dramatic Moments · Essay' : 'Wind Farm Site · Science'}</h3>
-            <p>{item.detail}</p>{item.quote && <blockquote>{item.quote}</blockquote>}</section>;
-        })}</div>
+            <p>{item.detail}</p>
+            {item.draftQuote && item.revisionQuote ? <>
+              <h4>First draft</h4><blockquote>{item.draftQuote}</blockquote>
+              <h4>Revised draft</h4><blockquote>{item.revisionQuote}</blockquote>
+            </> : item.quote && <blockquote>{item.quote}</blockquote>}
+          </section>;
+        })}{row?.next && <><h3>Next time</h3><p>{row.next}</p></>}</div>
       </details>;
     })}
   </section>;

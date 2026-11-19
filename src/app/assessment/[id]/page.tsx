@@ -49,8 +49,13 @@ export default function AssessmentPage({ params }: { params: Promise<{id:string}
   const revision = data.stage === 'revision';
   const done = data.stage === 'feedback';
   const chat = science ? data.comparison : data.discussion;
+  const completedSteps = { draft: 0, revision: 1, science: 2, feedback: 3 }[data.stage];
   return <main className={done ? "wrap session-report" : "secondary"}>
     <header className={done ? "intro-header" : undefined}><Brand/><span>{done ? 'Assessment complete' : science ? 'Task 2 of 2 · Science' : 'Task 1 of 2 · Humanities'}</span></header>
+    {!done && <div className="assessment-progress" role="progressbar" aria-label="Assessment progress"
+      aria-valuemin={0} aria-valuemax={3} aria-valuenow={completedSteps}>
+      <span style={{ width: `${completedSteps / 3 * 100}%` }}/>
+    </div>}
     {done ? <p className="report-kicker">Session feedback</p> : null}
     <h1>{done ? 'Your feedback' : science ? 'Choosing a Wind Farm Site' : 'Dramatic Moments'}</h1>
     {done ? <>
