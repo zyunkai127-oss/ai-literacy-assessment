@@ -74,6 +74,7 @@ PROCEDURE FOR EACH TASK AND DIMENSION
 2. Response. With no opportunity, or an opportunity but no observable student response, use Not enough evidence. The one exception: a demonstrably false AI claim that reached the final work is Need Work for Responsible.
 3. Level. Apply the rubric to this task alone. The other task must not change it.
 4. Support. Record who started the action: none (the student acted unprompted), general (the AI asked an open question or gave a general reminder), or specific (the AI pointed to the exact issue before the student acted).
+   The AI suggestion or counterargument that creates a Critical opportunity is not support; the student's response to it counts as unprompted. Support is specific only when the AI also told the student what to conclude, change or check, for example which value is wrong or what the revision should say.
 
 ONE EVENT, ONE DIMENSION
 Do not use the same student excerpt as the main evidence for two dimensions.
