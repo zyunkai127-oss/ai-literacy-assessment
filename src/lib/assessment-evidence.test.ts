@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { validateEvidence } from './assessment-evidence';
-import { provisionalScore, type Verification } from './assessment-scoring';
+import { combineLevels, provisionalScore, type Verification } from './assessment-scoring';
 import { newAssessment } from './secondary';
 
 const draft = 'A dramatic discovery hides years of careful work.';
@@ -17,31 +17,35 @@ const data = {
     { role: 'assistant' as const, text: 'I invented this source.', ts: 0 },
     { role: 'user' as const, text: chatDecision, ts: 1 },
   ],
-  comparison: [{ role: 'user' as const, text: [check, constraint, scienceDecision].join('\n'), ts: 0 }],
+  comparison: [
+    { role: 'assistant' as const, text: 'Bristol had 9 readings below five knots in the station log.', ts: 0 },
+    { role: 'user' as const, text: [check, constraint, scienceDecision].join('\n'), ts: 1 },
+  ],
 };
 
+const claim = { message: 1, quote: 'station log' };
 const gap = (task: string) => ({ task, sourceId: null, quote: null, outcome: 'insufficient', reason: 'No example was observed.', improvement: 'Explain your decision.', verification: null });
 const item = (task: string, sourceId: string, quote: string, outcome = 'met', firstDraftQuote?: string) =>
   ({ task, sourceId, quote, outcome, firstDraftQuote, reason: 'This explains your reasoning.', improvement: 'Name one source.', verification: null as Verification | null, inventedPoints: 99 });
 const verified = (outcome: string): ReturnType<typeof item> => ({
-  ...item('science', 'science-chat-1', check, outcome),
-  verification: { kind: 'student_initiated', material: 'station log', reminder: null },
+  ...item('science', 'science-chat-2', check, outcome),
+  verification: { kind: 'student_initiated', material: 'station log', reminder: null, claim },
 });
 const results = () => ({
   effective: [item('essay', 'revision', draft), item('science', 'science', recommendation)],
   critical: [item('essay', 'revision', essay, 'partial', firstDraftQuote), gap('science')],
   responsible: [gap('essay'), verified('missed')],
-  bonus: [gap('essay'), item('science', 'science-chat-1', constraint)],
+  bonus: [gap('essay'), item('science', 'science-chat-2', constraint)],
 });
 
 describe('provisional assessment scoring', () => {
   it('averages the three observed dimensions and applies the bonus once', () => {
     const feedback = validateEvidence(data, results());
-    expect(provisionalScore(feedback)).toEqual({
+    expect(provisionalScore(feedback)).toMatchObject({
       levels: { effective: 'Great', critical: 'Fair', responsible: 'Need Work', bonus: 'Great' },
       assessed: 3, total: 65, bonusApplied: 5,
     });
-    expect(feedback.evidence.responsible[1]).toMatchObject({ quote: check, source: 'chat', sourceLabel: 'Chat · Message 1' });
+    expect(feedback.evidence.responsible[1]).toMatchObject({ quote: check, source: 'chat', sourceLabel: 'Chat · Message 2' });
     expect(feedback.evidence.effective[0]).not.toHaveProperty('inventedPoints');
   });
 
@@ -100,7 +104,7 @@ describe('provisional assessment scoring', () => {
     const strong = results();
     strong.critical = [
       item('essay', 'revision', essay, 'met', firstDraftQuote),
-      item('science', 'science-chat-1', scienceDecision, 'partial'),
+      item('science', 'science-chat-2', scienceDecision, 'partial'),
     ];
     strong.responsible[1] = verified('met');
     const strongScore = provisionalScore(validateEvidence(data, strong));
@@ -110,7 +114,7 @@ describe('provisional assessment scoring', () => {
 
     const weak = results();
     weak.effective = weak.effective.map(entry => ({ ...entry, outcome: 'missed' }));
-    weak.critical[1] = item('science', 'science-chat-1', scienceDecision, 'missed');
+    weak.critical[1] = item('science', 'science-chat-2', scienceDecision, 'missed');
     weak.bonus[1] = gap('science');
     const weakScore = provisionalScore(validateEvidence(data, weak));
     expect(weakScore.levels.critical).toBe('Need Work');
@@ -178,7 +182,7 @@ describe('provisional assessment scoring', () => {
     ];
     const prompted = {
       ...item('science', 'science-chat-2', check),
-      verification: { kind: 'after_ai_reminder', material: 'station log', reminder: { message: 1, quote: reminder } },
+      verification: { kind: 'after_ai_reminder', material: 'station log', reminder: { message: 1, quote: reminder }, claim },
     };
     const raw = { ...results(), responsible: [gap('essay'), prompted] };
     expect(validateEvidence({ ...data, comparison }, raw).evidence.responsible[1]).toMatchObject({
@@ -194,7 +198,7 @@ describe('provisional assessment scoring', () => {
     const quote = 'I checked those rows in the notebook.';
     const check = {
       ...item('science', 'science', quote),
-      verification: { kind: 'unclear_initiator', material: 'Windmill test record', reminder: null },
+      verification: { kind: 'unclear_initiator', material: 'Windmill test record', reminder: null, claim },
     };
     const raw = { ...results(), responsible: [gap('essay'), check] };
     expect(validateEvidence({ ...data, science: recommendation + ' ' + quote }, raw).evidence.responsible[1]).toMatchObject({
@@ -213,5 +217,45 @@ describe('provisional assessment scoring', () => {
 
   it('rejects incomplete rubric results', () => {
     expect(() => validateEvidence(data, { effective: [] })).toThrow('Invalid dimension results');
+  });
+
+  it('scores a check after an AI reminder, or with an unclear initiator, as Fair', () => {
+    const raw = { ...results(), responsible: [gap('essay'), verified('met')] };
+    expect(provisionalScore(validateEvidence(data, raw)).levels.responsible).toBe('Great');
+    raw.responsible[1].verification = { kind: 'unclear_initiator', material: 'station log', reminder: null, claim };
+    expect(provisionalScore(validateEvidence(data, raw)).levels.responsible).toBe('Fair');
+  });
+
+  it('does not score a source check that tests no AI claim', () => {
+    const raw = { ...results(), responsible: [gap('essay'), verified('met')] };
+    raw.responsible[1].verification = { kind: 'student_initiated', material: 'station log', reminder: null, claim: { message: 1, quote: 'Invented claim.' } };
+    const feedback = validateEvidence(data, raw);
+    expect(feedback.evidence.responsible[1]).toMatchObject({ outcome: 'insufficient' });
+    expect(provisionalScore(feedback).levels.responsible).toBe('Not enough evidence');
+  });
+
+  it('counts a source check for Responsible before Critical', () => {
+    const raw = { ...results(), responsible: [gap('essay'), verified('met')], critical: [gap('essay'), item('science', 'science-chat-2', check)] };
+    const feedback = validateEvidence(data, raw);
+    expect(feedback.evidence.responsible[1]).toMatchObject({ quote: check, outcome: 'met' });
+    expect(feedback.evidence.critical.find(entry => entry.task === 'science')).toMatchObject({ outcome: 'insufficient', quote: null });
+  });
+
+  it('reports per-task levels and flags Great with Need Work as mixed', () => {
+    const raw = results();
+    raw.effective = [item('essay', 'revision', draft, 'missed'), item('science', 'science', recommendation)];
+    expect(provisionalScore(validateEvidence(data, raw)).results.effective).toEqual({
+      tasks: { essay: 'Need Work', science: 'Great' }, level: 'Fair', mixed: true,
+    });
+  });
+});
+
+describe('combineLevels', () => {
+  it('rounds the mean of two observed task levels down and ignores missing evidence', () => {
+    expect(combineLevels('Great', 'Fair')).toEqual({ level: 'Fair', mixed: false });
+    expect(combineLevels('Fair', 'Need Work')).toEqual({ level: 'Need Work', mixed: false });
+    expect(combineLevels('Great', 'Need Work')).toEqual({ level: 'Fair', mixed: true });
+    expect(combineLevels('Not enough evidence', 'Need Work').level).toBe('Need Work');
+    expect(combineLevels('Not enough evidence', 'Great', true).level).toBe('Great');
   });
 });

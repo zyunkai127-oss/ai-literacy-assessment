@@ -16,8 +16,14 @@ const verificationSchema = {
       properties: { message: { type: 'integer' }, quote: { type: 'string' } },
       required: ['message', 'quote'],
     },
+    claim: {
+      type: 'object',
+      additionalProperties: false,
+      properties: { message: { type: 'integer' }, quote: { type: 'string' } },
+      required: ['message', 'quote'],
+    },
   },
-  required: ['kind', 'material', 'reminder'],
+  required: ['kind', 'material', 'reminder', 'claim'],
 };
 
 const itemSchema = {
@@ -79,8 +85,9 @@ export function validateEvidence(data: Assessment, raw: unknown): EvidenceFeedba
   const sources = evidenceSources(data);
   const used: { text: string; quote: string }[] = [];
   const evidence = {} as EvidenceFeedback['evidence'];
-  // Give a quoted revision or source check priority over general writing-quality evidence.
-  for (const dimension of ['critical', 'responsible', 'effective', 'bonus'] as const) {
+  // A source check counts for Responsible first, so Critical needs a different decision.
+  // Both take priority over general writing-quality evidence.
+  for (const dimension of ['responsible', 'critical', 'effective', 'bonus'] as const) {
     const rows = raw[dimension];
     if (!Array.isArray(rows)) throw Error('Invalid dimension results');
     const items: EvidenceItem[] = [];
@@ -106,6 +113,14 @@ export function validateEvidence(data: Assessment, raw: unknown): EvidenceFeedba
 
         const verification = dimension === 'responsible' ? verifyAttribution(data, source, quote, row.verification) : undefined;
         if (dimension === 'responsible' && !verification) continue;
+        if (verification && verification.kind !== 'ai_reliance' && !verification.claim) {
+          accepted.push({
+            task, quote, source: source.source, sourceLabel: source.label, verification, outcome: 'insufficient',
+            reason: 'This passage is not linked to a checkable claim the AI made earlier, so there was no AI claim to verify.',
+            improvement: nextStep.responsible[task],
+          });
+          continue;
+        }
         if (verification?.kind === 'ai_reliance' && outcome !== 'missed') {
           accepted.push({
             task, quote, source: source.source, sourceLabel: source.label, verification, outcome: 'insufficient',
@@ -160,12 +175,13 @@ function verifyAttribution(
   if (!isRecord(value)) return;
   const kind = verificationKinds.find(option => option === value.kind);
   if (!kind) return;
-  if (kind === 'ai_reliance') return { kind, material: null, reminder: null };
+  if (kind === 'ai_reliance') return { kind, material: null, reminder: null, claim: null };
+  const claim = verifyClaim(data, source, value.claim);
 
   if (!isText(value.material, 120)) return;
   const material = materialInQuote(quote, value.material, source.task === 'science' && data.windPack === 2);
   if (!material) return;
-  if (kind !== 'after_ai_reminder') return { kind, material, reminder: null };
+  if (kind !== 'after_ai_reminder') return { kind, material, reminder: null, claim };
 
   const reminder = value.reminder;
   if (isRecord(reminder) && typeof reminder.message === 'number' && Number.isInteger(reminder.message) &&
@@ -174,10 +190,20 @@ function verifyAttribution(
     const history = source.task === 'essay' ? data.discussion : data.comparison;
     const message = history[reminder.message - 1];
     if (message?.role === 'assistant' && !message.blocked && message.text.includes(reminder.quote)) {
-      return { kind, material, reminder: { message: reminder.message, quote: reminder.quote } };
+      return { kind, material, reminder: { message: reminder.message, quote: reminder.quote }, claim };
     }
   }
-  return { kind: 'unclear_initiator', material, reminder: null };
+  return { kind: 'unclear_initiator', material, reminder: null, claim };
+}
+
+/** An assistant message, before the cited student passage, that contains the quoted claim. */
+function verifyClaim(data: Assessment, source: ReturnType<typeof evidenceSources>[number], value: unknown) {
+  if (!isRecord(value) || typeof value.message !== 'number' || !Number.isInteger(value.message) ||
+      value.message < 1 || !isText(value.quote, 500) || source.id === 'draft') return null;
+  if ('messageNumber' in source && value.message >= source.messageNumber) return null;
+  const message = (source.task === 'essay' ? data.discussion : data.comparison)[value.message - 1];
+  return message?.role === 'assistant' && !message.blocked && message.text.includes(value.quote)
+    ? { message: value.message, quote: value.quote } : null;
 }
 
 function materialInQuote(quote: string, label: string, fieldNotebookTask: boolean) {

@@ -5,12 +5,13 @@ import { essayPrompt, essayQuestion, type Assessment } from '../../../../../lib/
 import { criteria, evidenceVersion, type EvidenceFeedback } from '../../../../../lib/assessment-scoring';
 import { evidenceFormat, evidenceSources, validateEvidence } from '../../../../../lib/assessment-evidence';
 import { assessorPersona } from '../../../../../lib/assessment-personas';
-import { scienceMaterials } from '../../../../../lib/science-materials';
+import { scienceMaterials, scienceReferenceFacts } from '../../../../../lib/science-materials';
 
 const pending = new Map<string, Promise<EvidenceFeedback>>();
 
 async function rate(data: Assessment): Promise<EvidenceFeedback> {
   const sources = await scienceMaterials(data.windPack);
+  const facts = scienceReferenceFacts(data.windPack);
   const prompt = `${assessorPersona}
 
 Return the rubric results in the supplied schema. For each dimension return one flat array with one or two items per task. Keep reason and improvement concrete and student-facing, one short sentence each. Improvement gives an action the student can take. Use an empty firstDraftQuote unless citing a paired Humanities revision. Do not assign points, deductions, percentages or ratings.
@@ -20,10 +21,10 @@ Effective: judge only the final submission. In Science, assess one alternative s
 
 Critical in Humanities: focus on one decision. If the student asked the AI to challenge a specific claim and both drafts address it, follow that same claim across the drafts before considering other ideas. When describing a revision, use sourceId "revision", quote the revised passage in quote, and give firstDraftQuote with the exact earlier passage about the same idea. Compare both passages to determine what the student kept, qualified or replaced. When citing a chat message, describe only what the student said during the discussion.
 
-Responsible: use verification.kind none for a gap with no student quote. Use an empty material when unused. Use reminder {message:0,quote:""} unless there is a specific earlier reminder. For a demonstrated personal check choose student_initiated, after_ai_reminder, or unclear_initiator. Look first for a statement in the submission about what the student personally checked. Quote that statement verbatim, including the source name, and use only the exact source name as material. When the response also uses figures supplied by the AI, document that separately as ai_reliance. Name what the check confirmed or corrected in the reason. For after_ai_reminder, supply the earlier assistant message number and its exact reminder quote in reminder. For other kinds leave the reminder empty. When the student relies on the AI's figures or asks the AI to do the check, choose ai_reliance with empty material and reminder and outcome insufficient. Use missed only for an observable error, such as endorsing a demonstrably false claim. Merely quoting a correct result does not establish that the student verified it.
+Responsible: use verification.kind none for a gap with no student quote. Use an empty material when unused. Use reminder {message:0,quote:""} unless there is a specific earlier reminder. In claim, give the earlier assistant message number and an exact quote of the checkable claim the student checked, corrected or repeated. Use claim {message:0,quote:""} only when the AI made no such claim; a check that tests no AI claim is not evidence for Responsible. For a demonstrated personal check choose student_initiated, after_ai_reminder, or unclear_initiator. Look first for a statement in the submission about what the student personally checked. Quote that statement verbatim, including the source name, and use only the exact source name as material. When the response also uses figures supplied by the AI, document that separately as ai_reliance. Name what the check confirmed or corrected in the reason. For after_ai_reminder, supply the earlier assistant message number and its exact reminder quote in reminder. For other kinds leave the reminder empty. When the student relies on the AI's figures or asks the AI to do the check, choose ai_reliance with empty material and reminder and outcome insufficient. Use missed only for an observable error, such as endorsing a demonstrably false claim. Merely quoting a correct result does not establish that the student verified it.
 
 Bonus uses only met or insufficient. Mere activity, silence or writing fluency is not evidence. Copy a distinctive, exact contiguous excerpt (at most 500 characters) from the matching task in studentSources and give its exact sourceId. Reserve passages showing a source check or a specific draft change for those criteria. Use different passages to support Effective. For a gap with no quote use empty quote and sourceId.
-Humanities assignment:\n${essayPrompt}\n${essayQuestion}\nScience assignment and sources:\n${sources.join('\n')}`;
+Humanities assignment:\n${essayPrompt}\n${essayQuestion}\nScience assignment and sources:\n${sources.join('\n')}${facts.length ? `\nREFERENCE FACTS (computed by the server from the science materials; use them to judge whether claims by the AI or the student are accurate; the student and the AI collaborator did not see this section):\n${facts.join('\n')}` : ''}`;
   const { discussion, comparison } = data;
   const numbered = (messages: Assessment['discussion']) => messages.map((message, index) => ({
     ...message, message: index + 1,

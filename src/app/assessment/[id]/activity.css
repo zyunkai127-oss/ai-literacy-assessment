@@ -96,3 +96,4 @@
   .secondary .revision-workspace #work{min-height:24rem}
   .revision-chat-link{display:inline-block;margin-bottom:.5rem}
 }
+.factor-tasks, .factor-note { font-size: 13px; }
