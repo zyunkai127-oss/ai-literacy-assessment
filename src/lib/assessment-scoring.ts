@@ -12,7 +12,7 @@ export type Level = 'Great' | 'Fair' | 'Need Work' | 'Not enough evidence';
 export const criteria: Record<Dimension, Record<Task, string>> = {
   effective: {
     essay: 'Support a clear argument with reasoning and a relevant example.',
-    science: 'Recommend a site using accurate evidence and compare it with one alternative.',
+    science: 'Compare the recommended site with one alternative and interpret the supplied measurements accurately.',
   },
   critical: {
     essay: 'Explain why you kept, changed or rejected a specific idea from the AI discussion.',
@@ -58,7 +58,9 @@ export function dimensionLevel(dimension: Dimension, items: EvidenceItem[]): Lev
   if (!observed.length) return 'Not enough evidence';
   if (dimension === 'bonus') return observed.some(item => item.outcome === 'met') ? 'Great' : 'Not enough evidence';
   if (observed.every(item => item.outcome === 'met')) return 'Great';
-  if (observed.every(item => item.outcome === 'missed')) return 'Need Work';
+  const met = observed.some(item => item.outcome === 'met');
+  const missed = observed.some(item => item.outcome === 'missed');
+  if (!met && missed) return 'Need Work';
   return 'Fair';
 }
 

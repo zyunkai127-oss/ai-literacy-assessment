@@ -21,8 +21,8 @@ function Evidence({ item, dimension }: { item: EvidenceItem; dimension: Dimensio
           : item.outcome === 'met'
             ? 'Supports Great when all assessed items meet the criteria.'
             : item.outcome === 'missed'
-              ? 'Supports Need Work when all assessed items miss the criteria. Mixed outcomes lead to Fair.'
-              : 'Makes the dimension rating Fair because the criterion is partly demonstrated.'}</dd></div>
+              ? 'Leads to Need Work when no assessed item fully meets the criterion.'
+              : 'Counts as partial evidence. The dimension rating considers all verified items.'}</dd></div>
       <div><dt>Try next</dt><dd>{item.improvement}</dd></div>
     </dl>
   </li>;

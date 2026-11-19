@@ -105,3 +105,29 @@ it('preserves task transitions and keeps a saved legacy report during feedback r
   expect(stream).toHaveBeenCalledTimes(2);
   expect(chatModelId()).toBe('test-model');
 });
+
+it('requests the flat feedback schema and can retry when a provider returns grouped task objects', async () => {
+  const id = insertAssessment({ ...newAssessment(), stage: 'feedback', revision: 'Saved essay.' });
+  const gap = { sourceId: null, quote: null, firstDraftQuote: null, outcome: 'insufficient', reason: 'No example.', improvement: 'Give an example.' };
+  const grouped = { essay: [gap], science: [gap] };
+  const rows = [{ ...gap, task: 'essay' }, { ...gap, task: 'science' }];
+  stream.mockImplementationOnce(async function* () {
+    yield JSON.stringify({ effective: grouped, critical: grouped, responsible: grouped, bonus: grouped });
+    return { model: 'test-model' };
+  }).mockImplementationOnce(async function* () {
+    yield JSON.stringify({ effective: rows, critical: rows, responsible: rows, bonus: rows });
+    return { model: 'test-model' };
+  });
+
+  expect((await feedback(request('', ''), ctx(id))).status).toBe(503);
+  expect(readAssessment(id)).toMatchObject({ version: 0, revision: 'Saved essay.' });
+  expect((await feedback(request('', ''), ctx(id))).status).toBe(200);
+  expect(readAssessment(id)?.feedback?.schema).toBe(1);
+  expect(stream.mock.calls[1][2]?.format).toMatchObject({
+    type: 'json_schema',
+    schema: {
+      required: ['effective', 'critical', 'responsible', 'bonus', 'unsupportedVoltageInference'],
+      properties: { critical: { type: 'array', items: { properties: { task: { enum: ['essay', 'science'] } } } } },
+    },
+  });
+});

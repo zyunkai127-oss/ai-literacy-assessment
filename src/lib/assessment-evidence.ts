@@ -1,6 +1,35 @@
 import { outcomes, rubricDimensions, tasks, type EvidenceFeedback, type EvidenceItem, type Outcome, type Task } from './assessment-scoring';
 import type { Assessment } from './secondary';
 
+const nullableString = { type: ['string', 'null'] };
+const itemSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    task: { type: 'string', enum: tasks },
+    sourceId: nullableString,
+    quote: nullableString,
+    firstDraftQuote: nullableString,
+    outcome: { type: 'string', enum: outcomes },
+    reason: { type: 'string' },
+    improvement: { type: 'string' },
+  },
+  required: ['task', 'sourceId', 'quote', 'firstDraftQuote', 'outcome', 'reason', 'improvement'],
+};
+
+export const evidenceFormat = {
+  type: 'json_schema' as const,
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      ...Object.fromEntries(rubricDimensions.map(dimension => [dimension, { type: 'array', items: itemSchema }])),
+      unsupportedVoltageInference: nullableString,
+    },
+    required: [...rubricDimensions, 'unsupportedVoltageInference'],
+  },
+};
+
 export function evidenceSources(data: Assessment) {
   const writing = [
     { id: 'draft', task: 'essay', source: 'essay', label: 'Essay · First draft', text: data.draft },
@@ -25,6 +54,16 @@ function isText(value: unknown, max: number): value is string {
 export function validateEvidence(data: Assessment, raw: unknown): EvidenceFeedback {
   if (!isRecord(raw)) throw Error('Invalid rubric results');
   const sources = evidenceSources(data);
+  const voltageQuote = raw.unsupportedVoltageInference;
+  const voltageFinding = data.windPack === 2 && isText(voltageQuote, 500) && data.science.includes(voltageQuote)
+    ? {
+      sourceId: 'science',
+      quote: voltageQuote,
+      outcome: 'missed' as const,
+      reason: 'The windmill experiment measured voltage. Voltage alone cannot establish how much power or energy a turbine could supply.',
+      improvement: 'Explain what the voltage reading shows and use power measurements over time to estimate energy delivered.',
+    }
+    : undefined;
   const used: { text: string; quote: string }[] = [];
   const evidence = {} as EvidenceFeedback['evidence'];
   // Rubric order resolves competing claims on the same passage consistently.
@@ -39,7 +78,12 @@ export function validateEvidence(data: Assessment, raw: unknown): EvidenceFeedba
       if (candidates.length < 1 || candidates.length > 2) throw Error('Invalid task results');
       const accepted: EvidenceItem[] = [];
       let gap: EvidenceItem | undefined;
-      for (const row of candidates) {
+      // Reserve one evidence slot for a verified windmill measurement finding.
+      const findings = dimension === 'effective' && task === 'science' && voltageFinding
+        ? [voltageFinding, ...candidates]
+        : candidates;
+      for (const row of findings) {
+        if (accepted.length === 2) break;
         const { quote, sourceId, outcome, reason, improvement } = row;
         if (!isText(reason, 500) || !isText(improvement, 500)) continue;
         if (outcome === 'insufficient') {

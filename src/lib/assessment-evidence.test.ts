@@ -10,13 +10,14 @@ const essay = 'I kept this example because it shows how stories spread.';
 const recommendation = 'I recommend Bristol because the wind was steadier.';
 const check = 'I checked the station log against the graph.';
 const constraint = 'Please focus on the school budget and one alternative.';
+const scienceDecision = 'I’m giving more weight to the calm days than to the peak.';
 const data = {
   ...newAssessment(), draft: draft + '\n' + firstDraftQuote, revision: draft + '\n' + essay, science: recommendation,
   discussion: [
     { role: 'assistant' as const, text: 'I invented this source.', ts: 0 },
     { role: 'user' as const, text: chatDecision, ts: 1 },
   ],
-  comparison: [{ role: 'user' as const, text: check + '\n' + constraint, ts: 0 }],
+  comparison: [{ role: 'user' as const, text: [check, constraint, scienceDecision].join('\n'), ts: 0 }],
 };
 
 const gap = (task: string) => ({ task, sourceId: null, quote: null, outcome: 'insufficient', reason: 'No example was observed.', improvement: 'Explain your decision.' });
@@ -87,6 +88,53 @@ describe('provisional assessment scoring', () => {
     const raw = results();
     raw.effective[1] = item('science', 'science', recommendation, 'missed');
     expect(provisionalScore(validateEvidence(data, raw)).levels.effective).toBe('Fair');
+  });
+
+  it('distinguishes the strong and weak QA cases with the same evidence coverage', () => {
+    const strong = results();
+    strong.critical = [
+      item('essay', 'revision', essay, 'met', firstDraftQuote),
+      item('science', 'science-chat-1', scienceDecision, 'partial'),
+    ];
+    strong.responsible[1] = item('science', 'science-chat-1', check);
+    const strongScore = provisionalScore(validateEvidence(data, strong));
+    expect(strongScore.levels.critical).toBe('Fair');
+    expect(strongScore.assessed).toBe(3);
+    expect(strongScore.total).toBeCloseTo(91.6667);
+
+    const weak = results();
+    weak.effective = weak.effective.map(entry => ({ ...entry, outcome: 'missed' }));
+    weak.critical[1] = item('science', 'science-chat-1', scienceDecision, 'missed');
+    weak.bonus[1] = gap('science');
+    const weakScore = provisionalScore(validateEvidence(data, weak));
+    expect(weakScore.levels.critical).toBe('Need Work');
+    expect(weakScore.assessed).toBe(3);
+    expect(weakScore.total).toBe(20);
+  });
+
+  it('reports a verified voltage inference separately from the site comparison without scoring it twice', () => {
+    const voltage = 'The windmill produced 2.386 volts in one test, which means a turbine can power the school.';
+    const submission = { ...data, science: recommendation + ' ' + voltage };
+    const raw = { ...results(), unsupportedVoltageInference: voltage };
+    raw.effective.push(item('science', 'science', voltage, 'missed'));
+    raw.responsible[1] = item('science', 'science', voltage, 'missed');
+
+    const feedback = validateEvidence(submission, raw);
+    const scienceItems = feedback.evidence.effective.filter(entry => entry.task === 'science');
+    expect(scienceItems).toMatchObject([
+      { quote: voltage, source: 'submission', outcome: 'missed', reason: expect.stringContaining('Voltage alone') },
+      { quote: recommendation, outcome: 'met' },
+    ]);
+    expect(feedback.evidence.responsible[1].outcome).toBe('insufficient');
+    expect(provisionalScore(feedback).levels.effective).toBe('Fair');
+  });
+
+  it('ignores a fabricated windmill quote or a windmill finding on a graph task', () => {
+    const voltage = 'The voltage proves that the turbine can power the school.';
+    const raw = { ...results(), unsupportedVoltageInference: voltage };
+    expect(provisionalScore(validateEvidence(data, raw)).levels.effective).toBe('Great');
+    const graphTask = { ...data, windPack: undefined, science: recommendation + ' ' + voltage };
+    expect(provisionalScore(validateEvidence(graphTask, raw)).levels.effective).toBe('Great');
   });
 
   it('rejects incomplete rubric results', () => {
