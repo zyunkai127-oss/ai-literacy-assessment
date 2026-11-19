@@ -32,13 +32,14 @@ For any dimension use Not enough evidence when the behavior is unobserved. Do no
     for (const task of ['essay','science'] as const) {
       const item = row.tasks?.[task];
       if (!item || typeof item.detail !== 'string' || !item.detail.trim() || typeof item.quote !== 'string') throw Error('Missing task evidence');
+      item.quote = item.quote.trim();
       if (item.quote && !words[task].some(t=>t.includes(item.quote))) {
         row.tasks[task] = {detail:'We could not verify a supporting passage in this task.',quote:''};
       }
     }
     if (!row.tasks.essay.quote && !row.tasks.science.quote) row.level = 'Not enough evidence';
     if (row.level === 'Not enough evidence') row.comment = 'More evidence is needed for this skill.';
-    else if (!row.comment.trim() || row.comment.trim().split(/\s+/).length > 12) {
+    else if (!row.comment.trim() || row.comment.trim().split(/\s+/).length > 10) {
       row.comment = {Great:'Your work demonstrates this skill.',Fair:'Your work partly demonstrates this skill.','Need Work':'This skill needs more practice.'}[row.level as 'Great'|'Fair'|'Need Work'];
     }
   }
