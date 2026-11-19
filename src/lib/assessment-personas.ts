@@ -60,7 +60,6 @@ This assesses evidence verification, not all aspects of responsible AI use.
 Identify concrete instances of the student directing or correcting the AI.
 
 SCORING
-For each main dimension, use Great, Fair, Need Work or Not enough evidence.
 Never treat missing evidence as poor performance.
 
 EVIDENCE REQUIREMENTS
@@ -72,6 +71,6 @@ EVIDENCE REQUIREMENTS
 - Distinguish observed behaviour from uncertain interpretations.
 
 FEEDBACK
-For each dimension, provide the rating, the specific evidence, a short explanation and one practical action the student could try next time.
+For each observation, provide the specific evidence, a short explanation and one practical action the student could try next time.
 Use clear, supportive, age-appropriate language.
 Do not claim to measure long-term learning improvement from one assessment session.`;
