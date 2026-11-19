@@ -316,6 +316,8 @@ label.choice:has(input:disabled) { opacity: .5; cursor: not-allowed; }
 .factor-subtitle { display: block; margin-top: 4px; font-size: 13px; font-weight: 400; color: var(--muted); }
 .factor-detail { max-width: 66ch; padding: 0 0 18px; color: var(--muted); }
 .factor-detail h3 { color: var(--ink); font-size: 14px; }
+.factor-detail .task-level { font-weight: 400; color: var(--muted); }
+.factor-note { font-size: 13px; }
 .intro-header { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 58px; }
 .intro-heading { margin-bottom: 32px; }
 .intro-heading .eyebrow { color: var(--accent); }

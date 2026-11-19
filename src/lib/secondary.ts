@@ -31,17 +31,25 @@ export const dimensions = {
   responsible: 'Responsible use',
   bonus: 'Bonus · Managing AI'
 };
-type TaskFeedback = {
+export type Level = 'Great' | 'Fair' | 'Need Work' | 'Not enough evidence';
+export type Support = 'none' | 'general' | 'specific';
+export type TaskFeedback = {
   detail: string;
   quote: string;
   draftQuote?: string;
   revisionQuote?: string;
+  /** Level for this task alone. Absent in feedback saved before per-task levels. */
+  level?: Level;
+  opportunity?: boolean;
+  support?: Support;
 };
 export type Rating = {
-  level: 'Great' | 'Fair' | 'Need Work' | 'Not enough evidence';
+  level: Level;
   comment: string;
   next?: string;
   tasks?: Record<'essay' | 'science', TaskFeedback>;
+  /** The two task levels were Great and Need Work. */
+  mixed?: boolean;
 };
 export type Ratings = Record<keyof typeof dimensions, Rating>;
 

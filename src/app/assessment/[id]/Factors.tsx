@@ -22,9 +22,9 @@ export function Factors({url, saved}: {url:string; saved?:Ratings}) {
       const style=row && {'Great':'supported','Fair':'insufficient','Need Work':'practise','Not enough evidence':'neutral'}[row.level];
       return <details key={key} className="report-factor"><summary><span>{dimensions[key]}<small className="factor-subtitle">{row?.tasks && row.comment}</small></span>
         <span className={'factor-status '+(style || 'neutral')}>{row?.level ?? (error?'Unavailable':'Reviewing…')}</span></summary>
-        <div className="factor-detail">{row?.tasks && (['essay','science'] as const).map(task=>{
+        <div className="factor-detail">{row?.mixed && <p className="factor-note">The two tasks gave different evidence for this skill, so the overall level is in between. Compare the two tasks below.</p>}{row?.tasks && (['essay','science'] as const).map(task=>{
           const item = row.tasks![task];
-          return <section key={task}><h3>{task === 'essay' ? 'Dramatic Moments · Essay' : 'Wind Farm Site · Science'}</h3>
+          return <section key={task}><h3>{task === 'essay' ? 'Dramatic Moments · Essay' : 'Wind Farm Site · Science'}{item.level && <span className="task-level"> · {item.level}</span>}</h3>
             <p>{item.detail}</p>
             {item.draftQuote && item.revisionQuote ? <>
               <h4>First draft</h4><blockquote>{item.draftQuote}</blockquote>
