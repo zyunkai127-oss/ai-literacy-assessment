@@ -47,6 +47,7 @@ export interface Scenario {
 }
 
 export interface Msg {
+  model?: string;
   failed?: boolean;
   role: 'user' | 'assistant';
   text: string;

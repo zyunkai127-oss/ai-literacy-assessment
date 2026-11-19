@@ -5,7 +5,7 @@ import { redactPII } from './guardrails';
 import { scenario } from './scenario';
 import type { Mode, Msg } from './types';
 
-const DEFAULT_MODEL = 'claude-haiku-5-5';
+export const chatModelId = () => process.env.CHAT_MODEL?.trim() || 'claude-haiku-5-5';
 export const llmAvailable = () => !!(process.env.ANTHROPIC_API_KEY?.trim() || process.env.ANTHROPIC_AUTH_TOKEN?.trim());
 
 export interface Persona { mode: Mode; guideOnly: boolean; secondsLeft: number; summaryShown?: boolean }
@@ -47,7 +47,7 @@ export function toApiMessages(history: Msg[]): { role: 'user' | 'assistant'; con
   return out;
 }
 
-export async function* streamReply(history: Msg[], persona: Persona | string): AsyncGenerator<string, { error?: string }> {
+export async function* streamReply(history: Msg[], persona: Persona | string): AsyncGenerator<string, { error?: string; model?: string }> {
   try {
     const client = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY?.trim() || null,
@@ -58,7 +58,7 @@ export async function* streamReply(history: Msg[], persona: Persona | string): A
     const messages = toApiMessages(history);
     if (!messages.length || messages[messages.length - 1].role !== 'user') return { error: 'The assistant could not answer this message. Try rephrasing it.' };
     const stream = client.messages.stream({
-      model: process.env.CHAT_MODEL?.trim() || DEFAULT_MODEL,
+      model: chatModelId(),
       // Thinking is on by default on this model and counts against max_tokens, so leave room for it:
       // at 1024 a reply could be cut off, or come back empty, before any visible text. Reply length is set in the prompt.
       max_tokens: 8000,
@@ -79,7 +79,7 @@ export async function* streamReply(history: Msg[], persona: Persona | string): A
     if (final.stop_reason === 'max_tokens') {
       return { error: 'The reply reached its length limit. You can ask the assistant to continue.' };
     }
-    return {};
+    return { model: final.model };
   } catch (error) {
     const status = error instanceof Anthropic.APIError ? error.status : undefined;
     if (status === 401 || status === 403) return { error: 'Live chat could not authenticate with the AI provider.' };
