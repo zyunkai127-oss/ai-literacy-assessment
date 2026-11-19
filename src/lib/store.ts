@@ -149,3 +149,25 @@ export function updatePendingReview(id: string, round: number, apply: (session: 
     throw error;
   }
 }
+
+// The Cambridge activity keeps both tasks together. A version check prevents
+// a late model reply or a second tab from overwriting a newer submission.
+function assessmentDb() {
+  const database = db();
+  database.exec('CREATE TABLE IF NOT EXISTS secondary_assessments (id TEXT PRIMARY KEY, version INTEGER NOT NULL, data TEXT NOT NULL)');
+  return database;
+}
+export function insertAssessment(data: import('./secondary').Assessment) {
+  const id = randomUUID();
+  assessmentDb().prepare('INSERT INTO secondary_assessments VALUES (?, ?, ?)').run(id, data.version, JSON.stringify(data));
+  return id;
+}
+export function readAssessment(id: string): import('./secondary').Assessment | null {
+  const row = assessmentDb().prepare('SELECT data FROM secondary_assessments WHERE id = ?').get(id) as { data: string } | undefined;
+  return row ? JSON.parse(row.data) : null;
+}
+export function updateAssessment(id: string, data: import('./secondary').Assessment) {
+  const previous = data.version++;
+  return assessmentDb().prepare('UPDATE secondary_assessments SET version=?, data=? WHERE id=? AND version=?')
+    .run(data.version, JSON.stringify(data), id, previous).changes === 1;
+}

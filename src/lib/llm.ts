@@ -47,7 +47,7 @@ export function toApiMessages(history: Msg[]): { role: 'user' | 'assistant'; con
   return out;
 }
 
-export async function* streamReply(history: Msg[], persona: Persona): AsyncGenerator<string, { error?: string }> {
+export async function* streamReply(history: Msg[], persona: Persona | string): AsyncGenerator<string, { error?: string }> {
   try {
     const client = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY?.trim() || null,
@@ -62,7 +62,7 @@ export async function* streamReply(history: Msg[], persona: Persona): AsyncGener
       // Thinking is on by default on this model and counts against max_tokens, so leave room for it:
       // at 1024 a reply could be cut off, or come back empty, before any visible text. Reply length is set in the prompt.
       max_tokens: 8000,
-      system: systemPrompt(persona),
+      system: typeof persona === 'string' ? persona : systemPrompt(persona),
       messages,
     });
     let any = false;

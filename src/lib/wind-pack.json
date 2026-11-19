@@ -1,0 +1,115 @@
+{
+  "question": "Your school can borrow one wind logger for a year. Which of four regions should get a longer survey for a possible small wind turbine? The team values dependable wind on ordinary days. Choose a region, compare it with the strongest alternative you see, and use the turbine measurements to explain why your comparison matters. State one thing you would measure before recommending construction. Submit a short note to the school energy team.",
+  "context": "01 The decision Your school can borrow one wind logger for a year. Which of four regions should get a longer survey for a possible small wind turbine? The team values dependable wind on ordinary days. Choose a region, compare it with the strongest alternative you see, and use the turbine measurements to explain why your comparison matters. State one thing you would measure before recommending construction. Submit a short note to the school energy team. The stations stand in for four candidate regions in this classroom scenario. Airport readings describe local weather. A school roof or a turbine tower can experience different wind. You have one week of station reports and measurements from a separate windmill.\n02 Field notebook These are observations at 12:50 UTC on seven consecutive days. Each entry is wind speed in knots. Using the same clock time makes comparisons straightforward. The full station log includes other hours and gives you a way to challenge a first impression. If two regions look promising, choose a comparison that fits the school goal. You might compare their lowest day, typical reading or number of calm days. Say which comparison you used and why.\n03 Windmill test record Eight paired observations from a published 25-reading windmill dataset. Each row records the wind speed and the DC output voltage together. One knot is about 1.151 mph. Use the readings to check how closely output follows wind speed. Voltage measures electrical potential. Estimating energy over a year also needs power and time. The test used different equipment from the weather stations. Transferring exact voltages to a proposed turbine would require its own test curve.\n04 Checking your recommendation A teammate favours the place with the highest single reading. Another favours the place that holds up on calmer days. Decide what each argument captures and where each is vulnerable. The recommendation is yours. Your evidence trail can be brief: identify a field date or comparison, identify windmill readings that inform your reasoning, and name one missing measurement that could change your choice.\nStation codes: {'EGGD': 'Bristol', 'EGCC': 'Manchester', 'EGPH': 'Edinburgh', 'EGLL': 'Heathrow'}\nDaily observations (knots)\nDay (UTC), Bristol, Manchester, Edinburgh, Heathrow\n2024-10-01, 6, 13, 12, 11\n2024-10-02, 10, 11, 14, 7\n2024-10-03, 9, 3, 8, 7\n2024-10-04, 10, 5, 9, 6\n2024-10-05, 13, 6, 8, 11\n2024-10-06, 10, 5, 9, 9\n2024-10-07, 8, 6, 3, 12\nWindmill readings\nReading, Wind (mph), Output (V)\n1, 5.00, 1.582\n2, 6.00, 1.822\n3, 3.40, 1.057\n4, 2.70, 0.500\n5, 10.00, 2.236\n6, 9.70, 2.386\n7, 9.55, 2.294\n8, 3.05, 0.558",
+  "stations": {
+    "EGGD": "Bristol",
+    "EGCC": "Manchester",
+    "EGPH": "Edinburgh",
+    "EGLL": "Heathrow"
+  },
+  "field": [
+    [
+      "Day (UTC)",
+      "Bristol",
+      "Manchester",
+      "Edinburgh",
+      "Heathrow"
+    ],
+    [
+      "2024-10-01",
+      "6",
+      "13",
+      "12",
+      "11"
+    ],
+    [
+      "2024-10-02",
+      "10",
+      "11",
+      "14",
+      "7"
+    ],
+    [
+      "2024-10-03",
+      "9",
+      "3",
+      "8",
+      "7"
+    ],
+    [
+      "2024-10-04",
+      "10",
+      "5",
+      "9",
+      "6"
+    ],
+    [
+      "2024-10-05",
+      "13",
+      "6",
+      "8",
+      "11"
+    ],
+    [
+      "2024-10-06",
+      "10",
+      "5",
+      "9",
+      "9"
+    ],
+    [
+      "2024-10-07",
+      "8",
+      "6",
+      "3",
+      "12"
+    ]
+  ],
+  "lab": [
+    [
+      "Reading",
+      "Wind (mph)",
+      "Output (V)"
+    ],
+    [
+      "1",
+      "5.00",
+      "1.582"
+    ],
+    [
+      "2",
+      "6.00",
+      "1.822"
+    ],
+    [
+      "3",
+      "3.40",
+      "1.057"
+    ],
+    [
+      "4",
+      "2.70",
+      "0.500"
+    ],
+    [
+      "5",
+      "10.00",
+      "2.236"
+    ],
+    [
+      "6",
+      "9.70",
+      "2.386"
+    ],
+    [
+      "7",
+      "9.55",
+      "2.294"
+    ],
+    [
+      "8",
+      "3.05",
+      "0.558"
+    ]
+  ]
+}
