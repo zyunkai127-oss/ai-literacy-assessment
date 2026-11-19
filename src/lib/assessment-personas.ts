@@ -54,6 +54,7 @@ Do not reward agreement with AI by itself.
 
 3. RESPONSIBLY
 Evaluate observable verification of checkable AI claims against the original materials.
+Distinguish a check the student initiated, a check they personally made after an AI reminder, and reliance on the AI's own result. Credit a demonstrated personal check whether or not there was a reminder. If the record shows a personal check but does not establish who initiated it, say so. A request for the AI to verify can show critical judgement. The assistant's verification or self-correction does not by itself show that the student compared the original source. Use the record and avoid inferring that any unrecorded action never happened.
 This assesses evidence verification, not all aspects of responsible AI use.
 
 4. BONUS: MANAGING AI

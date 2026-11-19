@@ -1,15 +1,33 @@
-import { outcomes, rubricDimensions, tasks, type EvidenceFeedback, type EvidenceItem, type Outcome, type Task } from './assessment-scoring';
+import {
+  evidenceVersion, outcomes, rubricDimensions, tasks, verificationKinds,
+  type EvidenceFeedback, type EvidenceItem, type Outcome, type Task, type Verification,
+} from './assessment-scoring';
 import type { Assessment } from './secondary';
 
-const nullableString = { type: ['string', 'null'] };
+const verificationSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    kind: { type: 'string', enum: ['none', ...verificationKinds] },
+    material: { type: 'string' },
+    reminder: {
+      type: 'object',
+      additionalProperties: false,
+      properties: { message: { type: 'integer' }, quote: { type: 'string' } },
+      required: ['message', 'quote'],
+    },
+  },
+  required: ['kind', 'material', 'reminder'],
+};
+
 const itemSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
     task: { type: 'string', enum: tasks },
-    sourceId: nullableString,
-    quote: nullableString,
-    firstDraftQuote: nullableString,
+    sourceId: { type: 'string' },
+    quote: { type: 'string' },
+    firstDraftQuote: { type: 'string' },
     outcome: { type: 'string', enum: outcomes },
     reason: { type: 'string' },
     improvement: { type: 'string' },
@@ -17,16 +35,21 @@ const itemSchema = {
   required: ['task', 'sourceId', 'quote', 'firstDraftQuote', 'outcome', 'reason', 'improvement'],
 };
 
+const responsibleItemSchema = {
+  ...itemSchema,
+  properties: { ...itemSchema.properties, verification: verificationSchema },
+  required: [...itemSchema.required, 'verification'],
+};
+
 export const evidenceFormat = {
   type: 'json_schema' as const,
   schema: {
     type: 'object',
     additionalProperties: false,
-    properties: {
-      ...Object.fromEntries(rubricDimensions.map(dimension => [dimension, { type: 'array', items: itemSchema }])),
-      unsupportedVoltageInference: nullableString,
-    },
-    required: [...rubricDimensions, 'unsupportedVoltageInference'],
+    properties: Object.fromEntries(rubricDimensions.map(dimension => [
+      dimension, { type: 'array', items: dimension === 'responsible' ? responsibleItemSchema : itemSchema },
+    ])),
+    required: [...rubricDimensions],
   },
 };
 
@@ -38,7 +61,7 @@ export function evidenceSources(data: Assessment) {
   ] as const;
   const chat = ([['essay', data.discussion], ['science', data.comparison]] as const).flatMap(([task, history]) =>
     history.flatMap((message, index) => message.role === 'user' && !message.blocked
-      ? [{ id: task + '-chat-' + (index + 1), task, source: 'chat' as const, label: 'Chat · Message ' + (index + 1), text: message.text }]
+      ? [{ id: task + '-chat-' + (index + 1), task, source: 'chat' as const, label: 'Chat · Message ' + (index + 1), text: message.text, messageNumber: index + 1 }]
       : []));
   return [...writing, ...chat];
 }
@@ -54,40 +77,25 @@ function isText(value: unknown, max: number): value is string {
 export function validateEvidence(data: Assessment, raw: unknown): EvidenceFeedback {
   if (!isRecord(raw)) throw Error('Invalid rubric results');
   const sources = evidenceSources(data);
-  const voltageQuote = raw.unsupportedVoltageInference;
-  const voltageFinding = data.windPack === 2 && isText(voltageQuote, 500) && data.science.includes(voltageQuote)
-    ? {
-      sourceId: 'science',
-      quote: voltageQuote,
-      outcome: 'missed' as const,
-      reason: 'The windmill experiment measured voltage. Voltage alone cannot establish how much power or energy a turbine could supply.',
-      improvement: 'Explain what the voltage reading shows and use power measurements over time to estimate energy delivered.',
-    }
-    : undefined;
   const used: { text: string; quote: string }[] = [];
   const evidence = {} as EvidenceFeedback['evidence'];
-  // Rubric order resolves competing claims on the same passage consistently.
-  for (const dimension of rubricDimensions) {
+  // Give a quoted revision or source check priority over general writing-quality evidence.
+  for (const dimension of ['critical', 'responsible', 'effective', 'bonus'] as const) {
     const rows = raw[dimension];
-    if (!Array.isArray(rows) || rows.length < 2 || rows.length > 4 || rows.some(row =>
-      !isRecord(row) || !tasks.includes(row.task as Task) || !outcomes.includes(row.outcome as Outcome)
-      || !isText(row.reason, 500) || !isText(row.improvement, 500))) throw Error('Invalid dimension results');
+    if (!Array.isArray(rows)) throw Error('Invalid dimension results');
     const items: EvidenceItem[] = [];
     for (const task of tasks) {
-      const candidates = rows.filter(row => isRecord(row) && row.task === task);
-      if (candidates.length < 1 || candidates.length > 2) throw Error('Invalid task results');
+      const candidates = rows.filter(row => isRecord(row) && row.task === task).slice(0, 2);
+      const isEssayComparison = dimension === 'critical' && task === 'essay';
       const accepted: EvidenceItem[] = [];
       let gap: EvidenceItem | undefined;
-      // Reserve one evidence slot for a verified windmill measurement finding.
-      const findings = dimension === 'effective' && task === 'science' && voltageFinding
-        ? [voltageFinding, ...candidates]
-        : candidates;
-      for (const row of findings) {
-        if (accepted.length === 2) break;
-        const { quote, sourceId, outcome, reason, improvement } = row;
-        if (!isText(reason, 500) || !isText(improvement, 500)) continue;
-        if (outcome === 'insufficient') {
-          if (quote === null && sourceId === null) gap ??= { task, quote, source: null, sourceLabel: null, outcome, reason, improvement };
+      for (const row of candidates) {
+        const { outcome, reason, improvement } = row;
+        const quote = row.quote === '' ? null : row.quote;
+        const sourceId = row.sourceId === '' ? null : row.sourceId;
+        if (!outcomes.includes(outcome as Outcome) || !isText(reason, 500) || !isText(improvement, 500)) continue;
+        if (outcome === 'insufficient' && quote === null && sourceId === null) {
+          gap ??= { task, quote, source: null, sourceLabel: null, outcome, reason, improvement };
           continue;
         }
         if (dimension === 'bonus' && outcome !== 'met') continue;
@@ -95,10 +103,35 @@ export function validateEvidence(data: Assessment, raw: unknown): EvidenceFeedba
         const source = sources.find(entry => entry.id === sourceId && entry.task === task);
         if (!source || !source.text.includes(quote)) continue;
         if (dimension === 'effective' && source.id !== (task === 'essay' ? 'revision' : 'science')) continue;
+
+        const verification = dimension === 'responsible' ? verifyAttribution(data, source, quote, row.verification) : undefined;
+        if (dimension === 'responsible' && !verification) continue;
+        if (verification?.kind === 'ai_reliance' && outcome !== 'missed') {
+          accepted.push({
+            task, quote, source: source.source, sourceLabel: source.label, verification, outcome: 'insufficient',
+            reason: 'This passage records asking for or using an AI result. Your own source comparison is not shown.',
+            improvement: nextStep.responsible[task],
+          });
+          continue;
+        }
+        if (outcome === 'insufficient') continue;
+
         let firstDraftQuote: string | undefined;
-        if (dimension === 'critical' && task === 'essay' && source.source !== 'chat') {
-          if (source.id !== 'revision' || !isText(row.firstDraftQuote, 500) || !data.draft.includes(row.firstDraftQuote)) continue;
-          firstDraftQuote = row.firstDraftQuote;
+        let itemReason = reason;
+        let itemImprovement = improvement;
+        if (verification?.kind === 'unclear_initiator' && isRecord(row.verification) &&
+            row.verification.kind === 'after_ai_reminder') {
+          itemReason = 'You report checking this source. The discussion does not confirm what prompted that check.';
+        }
+        if (isEssayComparison) {
+          if (source.source === 'chat') {
+            if (row.firstDraftQuote) continue;
+            itemReason = 'This rating is based on what you said during the AI discussion.';
+            itemImprovement = 'Explain why you accept, qualify or reject a specific suggestion from the assistant.';
+          } else {
+            if (source.id !== 'revision' || !isText(row.firstDraftQuote, 500) || !data.draft.includes(row.firstDraftQuote)) continue;
+            firstDraftQuote = row.firstDraftQuote;
+          }
         }
         const passages = (firstDraftQuote ? [quote, firstDraftQuote] : [quote]).map(excerpt => ({
           quote: excerpt,
@@ -108,13 +141,55 @@ export function validateEvidence(data: Assessment, raw: unknown): EvidenceFeedba
           entry.text.includes(passage.text) || passage.text.includes(entry.text)
           || sources.some(document => sharesPassage(document.text, entry.quote, passage.quote))))) continue;
         used.push(...passages);
-        accepted.push({ task, quote, firstDraftQuote, source: source.source, sourceLabel: source.label, outcome, reason, improvement });
+        accepted.push({
+          task, quote, firstDraftQuote, source: source.source, sourceLabel: source.label,
+          outcome, reason: itemReason, improvement: itemImprovement, ...(verification && { verification }),
+        });
+        if (isEssayComparison) break;
       }
       items.push(...(accepted.length ? accepted : [gap ?? missingEvidence(task, dimension)]));
     }
     evidence[dimension] = items;
   }
-  return { schema: 1, evidence };
+  return { schema: evidenceVersion, evidence };
+}
+
+function verifyAttribution(
+  data: Assessment, source: ReturnType<typeof evidenceSources>[number], quote: string, value: unknown,
+): Verification | undefined {
+  if (!isRecord(value)) return;
+  const kind = verificationKinds.find(option => option === value.kind);
+  if (!kind) return;
+  if (kind === 'ai_reliance') return { kind, material: null, reminder: null };
+
+  if (!isText(value.material, 120)) return;
+  const material = materialInQuote(quote, value.material, source.task === 'science' && data.windPack === 2);
+  if (!material) return;
+  if (kind !== 'after_ai_reminder') return { kind, material, reminder: null };
+
+  const reminder = value.reminder;
+  if (isRecord(reminder) && typeof reminder.message === 'number' && Number.isInteger(reminder.message) &&
+      reminder.message >= 1 && isText(reminder.quote, 500) && source.id !== 'draft' &&
+      (!('messageNumber' in source) || reminder.message < source.messageNumber)) {
+    const history = source.task === 'essay' ? data.discussion : data.comparison;
+    const message = history[reminder.message - 1];
+    if (message?.role === 'assistant' && !message.blocked && message.text.includes(reminder.quote)) {
+      return { kind, material, reminder: { message: reminder.message, quote: reminder.quote } };
+    }
+  }
+  return { kind: 'unclear_initiator', material, reminder: null };
+}
+
+function materialInQuote(quote: string, label: string, fieldNotebookTask: boolean) {
+  const lowerQuote = quote.toLowerCase();
+  const name = label.trim().toLowerCase();
+  const start = lowerQuote.indexOf(name);
+  if (start >= 0) return quote.slice(start, start + name.length);
+
+  // The student can name the same bundled source using a shorter label.
+  if (!fieldNotebookTask) return;
+  if (/\b(field notebook|windmill test)\b/.test(name)) return quote.match(/\b(?:field )?notebook\b/i)?.[0];
+  if (/\bstation[ -]log\b/.test(name)) return quote.match(/\bstation[ -]log(?:\.csv)?\b/i)?.[0];
 }
 
 function sharesPassage(text: string, first: string, second: string) {

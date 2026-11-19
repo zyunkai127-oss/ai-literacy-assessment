@@ -75,7 +75,7 @@ it('blocks an overlapping request, hides thrown details and releases the lock', 
   expect((await POST(request('chat', 'What should I compare?'), ctx(id))).status).toBe(200);
 });
 
-it('preserves task transitions and keeps a saved legacy report during feedback retries', async () => {
+it('preserves task transitions and requires an explicit request to regenerate saved feedback', async () => {
   const id = insertAssessment({ ...newAssessment(), windPack: undefined });
   expect((await POST(request('chat', 'Help'), ctx(id))).status).toBe(409);
   for (const [version, stage] of ['revision', 'science', 'feedback'].entries()) {
@@ -86,29 +86,40 @@ it('preserves task transitions and keeps a saved legacy report during feedback r
   const data = readAssessment(id)!;
   const legacy = { effective: { level: 'Great', comment: 'Previously saved feedback.' } } as Ratings;
   const legacyId = insertAssessment({ ...data, ratings: legacy });
+  const regenerate = () => new Request('http://localhost/feedback', {
+    method: 'POST', body: JSON.stringify({ regenerate: true }),
+  });
+  expect((await feedback(request('', ''), ctx(legacyId))).status).toBe(409);
+  expect(stream).not.toHaveBeenCalled();
   stream.mockImplementationOnce(async function* () { return { error: 'Provider unavailable' }; });
-  expect((await feedback(request('', ''), ctx(legacyId))).status).toBe(503);
+  expect((await feedback(regenerate(), ctx(legacyId))).status).toBe(503);
   expect(readAssessment(legacyId)?.ratings).toEqual(legacy);
 
-  const gap = { sourceId: null, quote: null, outcome: 'insufficient', reason: 'No example.', improvement: 'Give an example.' };
+  const gap = { sourceId: '', quote: '', firstDraftQuote: '', outcome: 'insufficient', reason: 'No example.', improvement: 'Give an example.' };
   const rows = [{ ...gap, task: 'essay' }, { ...gap, task: 'science' }];
   stream.mockImplementationOnce(async function* () {
     yield JSON.stringify({ effective: rows, critical: rows, responsible: rows, bonus: rows });
     return { model: 'test-model' };
   });
-  const response = await feedback(request('', ''), ctx(legacyId));
+  const response = await feedback(regenerate(), ctx(legacyId));
   expect(response.status).toBe(200);
   const result = await response.json();
-  expect(result.schema).toBe(1);
+  expect(result.schema).toBe(2);
   expect(readAssessment(legacyId)).toMatchObject({ feedback: result, ratings: legacy });
   expect(await (await feedback(request('', ''), ctx(legacyId))).json()).toEqual(result);
   expect(stream).toHaveBeenCalledTimes(2);
   expect(chatModelId()).toBe('test-model');
+
+  const previous = { ...result, schema: 1 as const };
+  const previousId = insertAssessment({ ...data, feedback: previous });
+  const savedVersion = await feedback(request('', ''), ctx(previousId));
+  expect(await savedVersion.json()).toEqual(previous);
+  expect(stream).toHaveBeenCalledTimes(2);
 });
 
 it('requests the flat feedback schema and can retry when a provider returns grouped task objects', async () => {
   const id = insertAssessment({ ...newAssessment(), stage: 'feedback', revision: 'Saved essay.' });
-  const gap = { sourceId: null, quote: null, firstDraftQuote: null, outcome: 'insufficient', reason: 'No example.', improvement: 'Give an example.' };
+  const gap = { sourceId: '', quote: '', firstDraftQuote: '', outcome: 'insufficient', reason: 'No example.', improvement: 'Give an example.' };
   const grouped = { essay: [gap], science: [gap] };
   const rows = [{ ...gap, task: 'essay' }, { ...gap, task: 'science' }];
   stream.mockImplementationOnce(async function* () {
@@ -122,12 +133,15 @@ it('requests the flat feedback schema and can retry when a provider returns grou
   expect((await feedback(request('', ''), ctx(id))).status).toBe(503);
   expect(readAssessment(id)).toMatchObject({ version: 0, revision: 'Saved essay.' });
   expect((await feedback(request('', ''), ctx(id))).status).toBe(200);
-  expect(readAssessment(id)?.feedback?.schema).toBe(1);
+  expect(readAssessment(id)?.feedback?.schema).toBe(2);
   expect(stream.mock.calls[1][2]?.format).toMatchObject({
     type: 'json_schema',
     schema: {
-      required: ['effective', 'critical', 'responsible', 'bonus', 'unsupportedVoltageInference'],
-      properties: { critical: { type: 'array', items: { properties: { task: { enum: ['essay', 'science'] } } } } },
+      required: ['effective', 'critical', 'responsible', 'bonus'],
+      properties: {
+        critical: { type: 'array', items: { properties: { task: { enum: ['essay', 'science'] } } } },
+        responsible: { type: 'array', items: { required: expect.arrayContaining(['verification']) } },
+      },
     },
   });
 });

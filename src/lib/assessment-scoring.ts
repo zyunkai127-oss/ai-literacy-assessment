@@ -28,6 +28,15 @@ export const criteria: Record<Dimension, Record<Task, string>> = {
   },
 };
 
+export const verificationKinds = ['student_initiated', 'after_ai_reminder', 'ai_reliance', 'unclear_initiator'] as const;
+export type Verification = {
+  kind: typeof verificationKinds[number];
+  material: string | null;
+  reminder: { message: number; quote: string } | null;
+};
+
+export const evidenceVersion = 2;
+
 export type EvidenceItem = {
   task: Task;
   quote: string | null;
@@ -35,10 +44,11 @@ export type EvidenceItem = {
   source: 'essay' | 'submission' | 'chat' | null;
   sourceLabel: string | null;
   outcome: Outcome;
+  verification?: Verification;
   reason: string;
   improvement: string;
 };
-export type EvidenceFeedback = { schema: 1; evidence: Record<Dimension, EvidenceItem[]> };
+export type EvidenceFeedback = { schema: 1 | typeof evidenceVersion; evidence: Record<Dimension, EvidenceItem[]> };
 
 // Provisional settings pending academic calibration.
 export const provisionalScheme = {
