@@ -47,7 +47,7 @@ export function toApiMessages(history: Msg[]): { role: 'user' | 'assistant'; con
   return out;
 }
 
-export async function* streamReply(history: Msg[], persona: Persona | string): AsyncGenerator<string, { error?: string; model?: string }> {
+export async function* streamReply(history: Msg[], persona: Persona | string, options?: { disableThinking?: boolean }): AsyncGenerator<string, { error?: string; model?: string }> {
   try {
     const client = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY?.trim() || null,
@@ -62,6 +62,7 @@ export async function* streamReply(history: Msg[], persona: Persona | string): A
       // Thinking is on by default on this model and counts against max_tokens, so leave room for it:
       // at 1024 a reply could be cut off, or come back empty, before any visible text. Reply length is set in the prompt.
       max_tokens: 8000,
+      ...(options?.disableThinking && { thinking: { type: 'disabled' as const } }),
       system: typeof persona === 'string' ? persona : systemPrompt(persona),
       messages,
     });
@@ -73,11 +74,14 @@ export async function* streamReply(history: Msg[], persona: Persona | string): A
       }
     }
     const final = await stream.finalMessage();
-    if (!any || final.stop_reason === 'refusal') {
-      return { error: 'The assistant could not answer this message. Try rephrasing it.' };
-    }
     if (final.stop_reason === 'max_tokens') {
-      return { error: 'The reply reached its length limit. You can ask the assistant to continue.' };
+      return { error: 'The assistant reached its output limit. Try asking one part of the question at a time.' };
+    }
+    if (final.stop_reason === 'refusal') {
+      return { error: 'The AI provider declined to answer this message.' };
+    }
+    if (!any) {
+      return { error: 'The AI provider returned an empty reply. You can retry the same message.' };
     }
     return { model: final.model };
   } catch (error) {
