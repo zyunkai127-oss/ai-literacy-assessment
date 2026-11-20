@@ -97,3 +97,4 @@
   .revision-chat-link{display:inline-block;margin-bottom:.5rem}
 }
 .factor-tasks, .factor-note { font-size: 13px; }
+.factor-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }

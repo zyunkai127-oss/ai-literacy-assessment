@@ -101,10 +101,24 @@ export function combineLevels(essay: Level, science: Level, bonus = false): { le
   return { level: pointLevels[Math.floor((a + b) / 2)], mixed: Math.abs(a - b) === 2 };
 }
 
+/**
+ * Evidence coverage for one dimension. observations counts the verified items that were scored,
+ * across both tasks. With exactly one, the level rests on a single observation, so the report
+ * flags it as an indication rather than a stable pattern. The flag does not change the score.
+ */
+export function evidenceCoverage(items: EvidenceItem[]) {
+  const scored = items.filter(item => item.outcome !== 'insufficient');
+  return {
+    observations: scored.length,
+    observedTasks: tasks.filter(task => scored.some(item => item.task === task)),
+    singleObservation: scored.length === 1,
+  };
+}
+
 export function dimensionResult(dimension: Dimension, items: EvidenceItem[]) {
   const levels = Object.fromEntries(tasks.map(task =>
     [task, taskLevel(dimension, items.filter(item => item.task === task))])) as Record<Task, Level>;
-  return { tasks: levels, ...combineLevels(levels.essay, levels.science, dimension === 'bonus') };
+  return { tasks: levels, ...combineLevels(levels.essay, levels.science, dimension === 'bonus'), ...evidenceCoverage(items) };
 }
 
 export function dimensionLevel(dimension: Dimension, items: EvidenceItem[]): Level {

@@ -82,6 +82,7 @@ export function Factors({ url, saved, legacy }: { url: string; saved?: EvidenceF
   }
 
   const score = feedback && provisionalScore(feedback);
+  const singleObservations = score ? coreDimensions.filter(key => score.results[key].singleObservation) : [];
   const savedLegacy = !feedback && !!legacy;
   const canRegenerate = savedLegacy || feedback?.schema === 1;
   return <>
@@ -93,6 +94,7 @@ export function Factors({ url, saved, legacy }: { url: string; saved?: EvidenceF
         </p>}
         {feedback && <p>Scoring rules · Version {feedback.schema}</p>}
         {score && <p>Evidence coverage · {score.assessed} of {coreDimensions.length} core dimensions assessed</p>}
+        {score && singleObservations.length > 0 && <p>Single observation · {singleObservations.map(key => dimensions[key]).join(', ')}</p>}
         {score && score.levels.bonus === 'Great' && <p>{score.total === null
           ? 'Bonus earned. An overall score requires more core evidence.'
           : `Bonus applied · +${new Intl.NumberFormat('en', { maximumFractionDigits: 1 }).format(score.bonusApplied)} points after the cap`}</p>}
@@ -109,6 +111,7 @@ export function Factors({ url, saved, legacy }: { url: string; saved?: EvidenceF
         <p>Each task gets its own level first. Two task levels are averaged and rounded down; one task without evidence does not lower the other.</p>
         <p>We average core dimensions with evidence. At least {provisionalScheme.minimumCoreDimensions} are required. Great in Bonus adds {provisionalScheme.bonus} points, up to {provisionalScheme.cap}% overall.</p>
         <p>Dimensions with insufficient evidence are excluded from the average. This scale is pending academic calibration.</p>
+        <p>A level based on one verified piece of evidence is marked Single observation. It still counts towards the score, but one observation cannot show a consistent pattern.</p>
       </details>}
     </section>
     {(score || legacy) && <section className="report-factors"><h2>{score ? 'Dimension breakdown' : 'Previously saved feedback'}</h2>
@@ -116,13 +119,15 @@ export function Factors({ url, saved, legacy }: { url: string; saved?: EvidenceF
         const row = legacy?.[key];
         const level = score?.levels[key] ?? row?.level;
         const points = score && key !== 'bonus' ? provisionalScheme.points[score.levels[key]] : null;
+        const single = !!score && key !== 'bonus' && score.results[key].singleObservation;
         return <details key={key} className="report-factor">
-          <summary><span>{dimensions[key]}</span><span className={'factor-status ' + (level ? levelStyle[level] : 'neutral')}>
+          <summary><span>{dimensions[key]}</span><span className="factor-badges"><span className={'factor-status ' + (level ? levelStyle[level] : 'neutral')}>
             {level ?? 'Unavailable'}{points !== null ? ` · ${points} points` : ''}
-          </span></summary>
+          </span>{single && <span className="factor-status neutral">Single observation</span>}</span></summary>
           <div className="factor-detail">
             {score && <p className="factor-tasks">{taskLabel.essay} · {score.results[key].tasks.essay} · {taskLabel.science} · {score.results[key].tasks.science}</p>}
             {score?.results[key].mixed && <p className="factor-note">The two tasks gave different evidence for this skill, so the overall level is in between.</p>}
+            {single && <p className="factor-note">This level rests on one verified piece of evidence from {taskLabel[score.results[key].observedTasks[0]]}. Treat it as an indication, not a consistent pattern.</p>}
             {feedback ? <ul className="assessment-evidence-list">{feedback.evidence[key].map((item, index) =>
               <Evidence key={index} dimension={key} item={item} />)}</ul>
               : row && <><p>{row.comment}</p>{Object.entries(row.tasks ?? {}).map(([task, item]) =>

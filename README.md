@@ -1,31 +1,43 @@
 # AI Literacy Check
 
-A student has one paragraph to answer a teaching committee’s question: does using AI help students learn? They can ask an AI research assistant for help and check its answers against a fictional survey, quiz report and reading list. Both the student and the assistant have the source pack.
+A two-task assessment of how secondary-school students (aged 14–16) work with AI. Students complete a humanities essay and a science recommendation with an AI collaborator. The report shows what the record demonstrates about using AI **effectively**, **critically** and **responsibly**, with a quotation behind every judgement.
 
-Built for Reply Student Tech Clash, **AI on Campus · Track A**.
+Built for Cambridge EduX 2026 (Challenge 01) and Reply Student Tech Clash, **AI on Campus · Track A**.
 
-Students can ask for an evidence summary using the chat button or a typed request. The fixed summary includes three deliberately incorrect claims. Students who see it report which statements they relied on. The results show how they handled each claim using rules shared across sessions.
+## The activity
 
-## Try the activity
+| Step | Task | AI available |
+| --- | --- | --- |
+| 1 | **Dramatic Moments** · write an independent first draft responding to a short prompt about why people prefer dramatic discovery stories | No |
+| 2 | Discuss the draft with the AI, then submit a revised essay | Yes |
+| 3 | **Choosing a Wind Farm Site** · recommend one of four UK regions for a year-long wind survey, using a field notebook (7 daily station readings), a windmill voltage test and the full station log | Yes |
+| 4 | Read the feedback report | — |
 
-- **Quick version:** Spend up to 4 minutes writing an 80–150 word brief. Submit it, report your confidence and say who wrote most of the wording.
-- **Full version:** Get 8 minutes for the same brief, then answer up to two follow-up questions. The next question or hint depends on your answer. A teacher can review disputed feedback.
+The science pack contains two built-in judgement points. The region with the highest single reading is not the most dependable on ordinary days, and the windmill test reports voltage, which cannot establish power or annual energy.
 
-## A student’s walkthrough
+## How assessment works
 
-![The student workspace with the week 9 quiz note open, a question about attendance in chat and a draft brief in the editor.](docs/images/student-workspace.png)
+Two AI roles are kept separate.
 
-1. **Read the sources.** The week 9 quiz note reports a three-point gap between groups. It also shows that weekly AI users attended more seminars.
-2. **Ask a focused question.** Try “Could attendance explain the gap?” The assistant already has the documents, so you can go straight to the question.
-3. **Make a decision.** Write the comparison in your own words and explain why it cannot establish that AI caused higher marks. Include two sourced data points and one student view in the finished brief.
+- **Collaborator** (`src/lib/assessment-personas.ts`) helps during the tasks. It offers suggestions and alternative views, leaves decisions to the student, does not reveal the rubric and does not remind students to fact-check unprompted.
+- **Assessor** runs once after both tasks. It receives the student's drafts, both numbered transcripts, the rubric and **reference facts** computed by the server from the wind data. The collaborator never sees these facts.
 
-## Reading the feedback
+Scoring then runs in three layers. The model identifies evidence, the server verifies it, and fixed rules produce the levels.
 
-![Example session report with a brief checklist and expandable feedback on source checking, conclusions and use of AI.](docs/images/session-feedback.png)
+1. **Evidence identification** (`src/app/api/assessment/[id]/feedback/route.ts`). The assessor returns structured items in a JSON schema. Each item gives a task, an exact quotation, its source, an outcome (`met`, `partial`, `missed` or `insufficient`), a reason and a next step. It never returns points.
+2. **Server verification** (`src/lib/assessment-evidence.ts`). An item is kept only if its quotation appears verbatim in the cited source. Effective must cite the final submission. A Critical essay item must pair a revised passage with the matching first-draft passage. A Responsible item must link to a complete earlier AI statement and name the material checked. The server also confirms who started the check. One student action supports only one process dimension.
+3. **Levels and score** (`src/lib/assessment-scoring.ts`). Each task gets its own level: Great, Fair, Need Work or Not enough evidence. Two task levels are averaged and rounded down. Missing evidence in one task never lowers the other. A Responsible check counts as Great only when the student started it.
 
-The example above comes from a different session. The student used figures from the assistant and concluded that AI improved learning. The report flags the missing source check and explains why comparing two groups cannot establish cause. Expand a row to see its criteria and a next step. The dial counts completed brief requirements, such as naming sources and staying within the word limit. There is no overall score or ranking.
+| Dimension | Evidence it looks for |
+| --- | --- |
+| Effective | Quality of the final work: a reasoned argument with an example; a site comparison that interprets the measurements accurately |
+| Critical | Accepting, qualifying or rejecting a specific AI suggestion with a reason |
+| Responsible | Checking a specific AI claim against the supplied materials. Essays rarely contain checkable claims, so this dimension usually rests on the science task |
+| Bonus · Managing AI | Giving the AI a specific requirement, context or correction |
 
-In the full version, a follow-up might ask how you checked a percentage. If the denominator is unclear, the next question can offer a hint. The report shows what you demonstrated with that support alongside the original task feedback.
+The provisional score maps Great, Fair and Need Work to 100, 60 and 20. It averages the core dimensions that have evidence and needs at least two. A Bonus at Great adds 5 points, up to 100. **This scale is provisional and pending academic calibration.** A dimension whose level rests on one verified item is marked **Single observation**. It still counts towards the score, but one observation cannot show a consistent pattern.
+
+Saved reports are cached, so the same work always shows the same feedback. Reports saved under earlier rules can be re-scored from the report page.
 
 ## Run locally
 
@@ -36,18 +48,29 @@ npm install
 cp -n .env.example .env.local
 ```
 
-Set `ANTHROPIC_API_KEY` in `.env.local` for live chat and feedback. To enable teacher review, also set `OPS_REVIEW_KEY`. Start the app:
+Set `ANTHROPIC_API_KEY` in `.env.local` for live chat and feedback. `CHAT_MODEL` selects the model, `claude-haiku-5-5` by default. Then start the app and open http://localhost:3000:
 
 ```sh
 npm run dev
 ```
 
-Open the [student activity](http://localhost:3000) or the [teacher dashboard](http://localhost:3000/ops). Run `npm test` and `npm run typecheck` to check a change.
+Run `npm test` and `npm run typecheck` to check a change.
 
-## Data and design
+## Repository map
 
-The app uses Next.js, TypeScript, SQLite and the Anthropic API. The AI receives redacted session text. Students choose whether to store their work. If they opt out, the app clears their chat, brief and written follow-up answers when they finish and keeps the structured feedback.
+| Path | Contents |
+| --- | --- |
+| `src/app/page.tsx`, `src/app/assessment/[id]/` | Landing page, two-task workspace, chat and report (`Factors.tsx`) |
+| `src/app/api/assessment/` | Create an activity, chat and submit (`[id]/route.ts`), generate feedback (`[id]/feedback/route.ts`) |
+| `src/lib/assessment-*.ts` | Personas, evidence schema and verification, scoring rules |
+| `src/lib/science-materials.ts`, `src/lib/wind-log.ts`, `src/lib/wind-pack.json`, `public/wind/` | Science materials and the reference facts computed from them |
+| `src/lib/store.ts` | SQLite storage with version checks, so two tabs cannot overwrite each other |
+| `docs/`, `supporting paper/` | Design notes and literature |
 
-The [scenario and source pack](data/scenario.json) contain the fictional teaching materials. The [design notes](docs/) document the earlier controlled activity and its scoring rationale.
+## Data and privacy
 
-The [three-layer assessment framework](docs/05_three_layer_framework.md) explains how the evidence fits together. In the live activity, chat and editing show how students use AI, and follow-up questions explore decisions the logs cannot explain. An earlier controlled scenario gave everyone the same claims to check. Only standardised tasks scored by shared rules can support comparisons between students.
+The app uses Next.js, TypeScript, SQLite and the Anthropic API. Student text is redacted for personal information before it reaches the model, and drafts are passed as content to discuss, not as instructions.
+
+## Earlier activity
+
+The repository still contains the earlier one-paragraph briefing activity: `src/app/s/`, `src/app/api/sessions/`, the teacher dashboard at `/ops`, `src/lib/scoring.ts`, `collaboration.ts`, `model-assessment.ts` and `data/scenario.json`. The landing page no longer links to it. Documents `docs/01`–`05` describe that activity. [`docs/06_unified_assessment_model.md`](docs/06_unified_assessment_model.md) is a draft for a future model and is not yet implemented.

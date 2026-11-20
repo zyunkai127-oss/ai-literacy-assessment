@@ -283,7 +283,18 @@ describe('provisional assessment scoring', () => {
     raw.effective = [item('essay', 'revision', draft, 'missed'), item('science', 'science', recommendation)];
     expect(provisionalScore(validateEvidence(data, raw)).results.effective).toEqual({
       tasks: { essay: 'Need Work', science: 'Great' }, level: 'Fair', mixed: true,
+      observations: 2, observedTasks: ['essay', 'science'], singleObservation: false,
     });
+  });
+
+  it('flags a dimension whose level rests on one verified item without changing the score', () => {
+    const score = provisionalScore(validateEvidence(data, results()));
+    expect(score.results.responsible).toMatchObject({
+      level: 'Need Work', observations: 1, observedTasks: ['science'], singleObservation: true,
+    });
+    expect(score.results.critical).toMatchObject({ level: 'Fair', singleObservation: true });
+    expect(score.results.effective.singleObservation).toBe(false);
+    expect(score.total).toBe((100 + 60 + 20) / 3 + 5);
   });
 });
 
