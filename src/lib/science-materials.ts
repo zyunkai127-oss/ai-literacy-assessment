@@ -2,7 +2,16 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import pack from './wind-pack.json';
 import { windEvidence, windQuestion } from './secondary';
-import { summariseWindLog } from './wind-log';
+import { summariseField, summariseLab, summariseWindLog } from './wind-log';
+
+/**
+ * Facts computed from the science materials, for the assessor only. The collaborator never sees
+ * them, so they do not change how accurate the student's AI partner is.
+ */
+export function scienceReferenceFacts(windPack?: 2) {
+  if (!windPack) return [];
+  return [summariseField(pack.field), summariseLab(pack.lab)];
+}
 
 export async function scienceMaterials(windPack?: 2) {
   if (!windPack) return [windQuestion, ...windEvidence];
