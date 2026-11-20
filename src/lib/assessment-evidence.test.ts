@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { validateEvidence } from './assessment-evidence';
-import { combineLevels, provisionalScore, type Verification } from './assessment-scoring';
+import { consensusEvidence, validateEvidence } from './assessment-evidence';
+import { combineLevels, evidenceStrength, provisionalScore, type Verification } from './assessment-scoring';
 import { newAssessment } from './secondary';
 
 const draft = 'A dramatic discovery hides years of careful work.';
@@ -71,6 +71,39 @@ describe('provisional assessment scoring', () => {
     expect(provisionalScore(feedback)).toMatchObject({ assessed: 1, total: null });
   });
 
+  it('does not let items downgraded to insufficient block a later verified check', () => {
+    const reliance = (quote: string) => ({
+      ...item('science', 'science-chat-2', quote),
+      verification: { kind: 'ai_reliance', material: '', reminder: null, claim } as Verification,
+    });
+    const raw = { ...results(), responsible: [gap('essay'), reliance(constraint), reliance(scienceDecision), verified('met')] };
+    const science = validateEvidence(data, raw).evidence.responsible.filter(entry => entry.task === 'science');
+    expect(science.map(entry => entry.outcome)).toEqual(['insufficient', 'insufficient', 'met']);
+    expect(science[2]).toMatchObject({ quote: check });
+  });
+
+  it('keeps a valid candidate listed after rejected ones and stops at two verified items', () => {
+    const raw = results();
+    raw.bonus = [
+      item('science', 'science-chat-2', 'made-up quotation'),
+      item('science', 'science', 'another invented line'),
+      item('science', 'science-chat-2', constraint),
+      gap('essay'),
+    ];
+    expect(validateEvidence(data, raw).evidence.bonus.find(entry => entry.task === 'science'))
+      .toMatchObject({ quote: constraint, outcome: 'met' });
+
+    raw.effective = [
+      item('essay', 'revision', 'not in the essay'),
+      item('essay', 'revision', draft),
+      item('essay', 'revision', essay),
+      item('essay', 'revision', 'A dramatic discovery'),
+      item('science', 'science', recommendation),
+    ];
+    expect(validateEvidence(data, raw).evidence.effective.filter(entry => entry.task === 'essay').map(entry => entry.quote))
+      .toEqual([draft, essay]);
+  });
+
   it('evaluates the final essay independently of the draft comparison', () => {
     const raw = results();
     raw.effective[0] = item('essay', 'revision', 'A dramatic discovery hides years');
@@ -110,7 +143,7 @@ describe('provisional assessment scoring', () => {
     const strongScore = provisionalScore(validateEvidence(data, strong));
     expect(strongScore.levels.critical).toBe('Fair');
     expect(strongScore.assessed).toBe(3);
-    expect(strongScore.total).toBeCloseTo(91.6667);
+    expect(strongScore.total).toBeCloseTo((100 + 80 + 100) / 3 + 5);
 
     const weak = results();
     weak.effective = weak.effective.map(entry => ({ ...entry, outcome: 'missed' }));
@@ -119,7 +152,7 @@ describe('provisional assessment scoring', () => {
     const weakScore = provisionalScore(validateEvidence(data, weak));
     expect(weakScore.levels.critical).toBe('Need Work');
     expect(weakScore.assessed).toBe(3);
-    expect(weakScore.total).toBe(20);
+    expect(weakScore.total).toBeCloseTo((20 + 40 + 20) / 3);
   });
 
   it('does not use a separate automatic deduction for a correctly stated voltage caveat', () => {
@@ -281,18 +314,97 @@ describe('provisional assessment scoring', () => {
   it('reports per-task levels and flags Great with Need Work as mixed', () => {
     const raw = results();
     raw.effective = [item('essay', 'revision', draft, 'missed'), item('science', 'science', recommendation)];
-    expect(provisionalScore(validateEvidence(data, raw)).results.effective).toEqual({
-      tasks: { essay: 'Need Work', science: 'Great' }, level: 'Fair', mixed: true,
+    expect(provisionalScore(validateEvidence(data, raw)).results.effective).toMatchObject({
+      tasks: { essay: 'Need Work', science: 'Great' }, level: 'Fair', range: ['Need Work', 'Great'], points: 60, mixed: true,
+      observations: 2, observedTasks: ['essay', 'science'], singleObservation: false,
+      strength: { n: 2, successes: 1 },
     });
+  });
+
+  it('flags a dimension whose level rests on one verified item without changing the score', () => {
+    const score = provisionalScore(validateEvidence(data, results()));
+    expect(score.results.responsible).toMatchObject({
+      level: 'Need Work', observations: 1, observedTasks: ['science'], singleObservation: true,
+    });
+    expect(score.results.critical).toMatchObject({ level: 'Fair', singleObservation: true });
+    expect(score.results.effective.singleObservation).toBe(false);
+    expect(score.total).toBe((100 + 60 + 20) / 3 + 5);
   });
 });
 
 describe('combineLevels', () => {
-  it('rounds the mean of two observed task levels down and ignores missing evidence', () => {
-    expect(combineLevels('Great', 'Fair')).toEqual({ level: 'Fair', mixed: false });
-    expect(combineLevels('Fair', 'Need Work')).toEqual({ level: 'Need Work', mixed: false });
-    expect(combineLevels('Great', 'Need Work')).toEqual({ level: 'Fair', mixed: true });
-    expect(combineLevels('Not enough evidence', 'Need Work').level).toBe('Need Work');
-    expect(combineLevels('Not enough evidence', 'Great', true).level).toBe('Great');
+  it('averages task points without rounding and ignores missing evidence', () => {
+    expect(combineLevels('Great', 'Fair')).toEqual({ level: 'Fair', range: ['Fair', 'Great'], points: 80, mixed: false });
+    expect(combineLevels('Fair', 'Need Work')).toEqual({ level: 'Need Work', range: ['Need Work', 'Fair'], points: 40, mixed: false });
+    expect(combineLevels('Great', 'Need Work')).toEqual({ level: 'Fair', range: ['Need Work', 'Great'], points: 60, mixed: true });
+    expect(combineLevels('Fair', 'Fair')).toEqual({ level: 'Fair', range: null, points: 60, mixed: false });
+    expect(combineLevels('Not enough evidence', 'Need Work')).toMatchObject({ level: 'Need Work', range: null, points: 20 });
+    expect(combineLevels('Not enough evidence', 'Not enough evidence')).toMatchObject({ level: 'Not enough evidence', points: null });
+    expect(combineLevels('Not enough evidence', 'Great', true)).toMatchObject({ level: 'Great', points: null });
+  });
+});
+
+describe('evidenceStrength', () => {
+  const scored = (outcome: string, verification?: Verification) =>
+    ({ task: 'science' as const, quote: 'q', source: 'chat' as const, sourceLabel: 'Chat', outcome: outcome as 'met', reason: 'r', improvement: 'i', verification });
+
+  it('gives the Jeffreys posterior mean and a 90% interval, and marks one item as wide', () => {
+    const one = evidenceStrength('effective', [scored('met')])!;
+    expect(one).toMatchObject({ n: 1, successes: 1, wide: true });
+    expect(one.mean).toBeCloseTo(0.75);
+    expect(one.interval[0]).toBeCloseTo(0.229, 3);
+    const two = evidenceStrength('effective', [scored('met'), scored('met')])!;
+    expect(two.mean).toBeCloseTo(2.5 / 3);
+    expect(two.interval[0]).toBeCloseTo(0.431, 3);
+    expect(two.wide).toBe(false);
+  });
+
+  it('counts partial as half a success, including a Responsible check the student did not start', () => {
+    const reminded: Verification = { kind: 'after_ai_reminder', material: 'station log', reminder: null, claim };
+    const strength = evidenceStrength('responsible', [scored('met', reminded), scored('missed'), scored('insufficient')])!;
+    expect(strength).toMatchObject({ n: 2, successes: 0.5 });
+    expect(strength.mean).toBeCloseTo(1 / 3);
+  });
+
+  it('returns null without verified items', () => {
+    expect(evidenceStrength('critical', [scored('insufficient')])).toBeNull();
+  });
+});
+
+describe('consensusEvidence', () => {
+  const level = (feedback: ReturnType<typeof consensusEvidence>, dimension: 'effective' | 'responsible', task: string) =>
+    provisionalScore(feedback).results[dimension].tasks[task as 'essay' | 'science'];
+
+  it('keeps a task level that two of three runs reach and drops one that only a single run reaches', () => {
+    const withCheck = { ...results(), responsible: [gap('essay'), verified('met')] };
+    const without = { ...results(), responsible: [gap('essay'), gap('science')] };
+    const missed = { ...results(), effective: [item('essay', 'revision', draft, 'missed'), item('science', 'science', recommendation)] };
+    const majority = consensusEvidence(data, [withCheck, without, withCheck]);
+    expect(majority.runs).toEqual({ requested: 3, valid: 3 });
+    expect(level(majority, 'responsible', 'science')).toBe('Great');
+    const minority = consensusEvidence(data, [withCheck, without, without]);
+    expect(level(minority, 'responsible', 'science')).toBe('Not enough evidence');
+    expect(level(consensusEvidence(data, [missed, withCheck, without]), 'effective', 'essay')).toBe('Great');
+  });
+
+  it('reports no level when all runs disagree and falls back to a single valid run', () => {
+    const great = { ...results(), effective: [item('essay', 'revision', draft), item('science', 'science', recommendation)] };
+    const partial = { ...great, effective: [item('essay', 'revision', draft, 'partial'), great.effective[1]] };
+    const missed = { ...great, effective: [item('essay', 'revision', draft, 'missed'), great.effective[1]] };
+    const split = consensusEvidence(data, [great, partial, missed]);
+    expect(level(split, 'effective', 'essay')).toBe('Not enough evidence');
+    expect(level(split, 'effective', 'science')).toBe('Great');
+    const single = consensusEvidence(data, [null, 'not json', great]);
+    expect(single.runs).toEqual({ requested: 3, valid: 1 });
+    expect(level(single, 'effective', 'essay')).toBe('Great');
+    expect(() => consensusEvidence(data, [null, null])).toThrow();
+  });
+
+  it('applies one-action-one-dimension again after merging rows from different runs', () => {
+    const asResponsible = { ...results(), responsible: [gap('essay'), verified('met')], critical: [gap('essay'), gap('science')] };
+    const asCritical = { ...results(), responsible: [gap('essay'), gap('science')], critical: [gap('essay'), item('science', 'science-chat-2', check)] };
+    const merged = consensusEvidence(data, [asResponsible, asCritical, { ...asResponsible, critical: asCritical.critical }]);
+    expect(level(merged, 'responsible', 'science')).toBe('Great');
+    expect(merged.evidence.critical.find(entry => entry.task === 'science')).toMatchObject({ outcome: 'insufficient', quote: null });
   });
 });

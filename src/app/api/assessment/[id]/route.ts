@@ -43,9 +43,11 @@ export async function POST(req: Request, ctx: Context) {
     const prompt = activityContext([collaboratorPersona, ...context], humanities ? data.draft : undefined, work);
     const message = { role: 'user' as const, text, ts: Date.now() };
     const modelMessage = prompt.studentWork ? { ...message, text: prompt.studentWork + '\nStudent message:\n' + text } : message;
-    const stream = streamReply([...history, modelMessage], prompt.system, {
-      thinking: !humanities && data.windPack === 2 ? 'disabled' : undefined,
-    });
+    // The station log is long. Without thinking, the assistant often misread the field notebook,
+    // for example reporting Manchester's lowest reading as 5 knots instead of 3, or corrected
+    // itself mid-reply. Low-effort thinking reads it reliably; the larger budget leaves room for it.
+    const stream = streamReply([...history, modelMessage], prompt.system,
+      !humanities && data.windPack === 2 ? { thinking: 'low', maxTokens: 16000 } : {});
     let part = await stream.next();
     let reply = '';
     while (!part.done) { reply += part.value; part = await stream.next(); }

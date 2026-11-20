@@ -1,3 +1,4 @@
+import { betaQuantile } from './beta';
 import { dimensions } from './secondary';
 
 export const coreDimensions = ['effective', 'critical', 'responsible'] as const;
@@ -37,7 +38,8 @@ export type Verification = {
   claim?: { message: number; quote: string } | null;
 };
 
-export const evidenceVersion = 2;
+/** 3: evidence is the consensus of several assessor runs. */
+export const evidenceVersion = 3;
 
 export type EvidenceItem = {
   task: Task;
@@ -50,7 +52,12 @@ export type EvidenceItem = {
   reason: string;
   improvement: string;
 };
-export type EvidenceFeedback = { schema: 1 | typeof evidenceVersion; evidence: Record<Dimension, EvidenceItem[]> };
+export type EvidenceFeedback = {
+  schema: 1 | 2 | typeof evidenceVersion;
+  evidence: Record<Dimension, EvidenceItem[]>;
+  /** Assessor runs requested and runs that passed verification. */
+  runs?: { requested: number; valid: number };
+};
 
 // Provisional settings pending academic calibration.
 export const provisionalScheme = {
@@ -84,27 +91,66 @@ export function taskLevel(dimension: Dimension, items: EvidenceItem[]): Level {
   return 'Fair';
 }
 
-const levelPoints = { 'Need Work': 0, Fair: 1, Great: 2 } as const;
-const pointLevels: Level[] = ['Need Work', 'Fair', 'Great'];
+/**
+ * Session result from the two task levels. Missing evidence in one task never lowers the other.
+ * With two observed levels the points are averaged without rounding, so Great with Fair gives 80.
+ * level is the highest band the averaged points reach, and range gives both task levels when they
+ * differ. Great with Need Work gives Fair at 60 and is marked mixed. Bonus needs one Great and has no points.
+ */
+export function combineLevels(essay: Level, science: Level, bonus = false): {
+  level: Level; range: [Level, Level] | null; points: number | null; mixed: boolean;
+} {
+  const order: Level[] = ['Need Work', 'Fair', 'Great'];
+  const seen = [essay, science].filter(level => order.includes(level)).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  if (bonus) return { level: seen.includes('Great') ? 'Great' : 'Not enough evidence', range: null, points: null, mixed: false };
+  if (!seen.length) return { level: 'Not enough evidence', range: null, points: null, mixed: false };
+  const points = seen.reduce((sum, level) => sum + (provisionalScheme.points[level] as number), 0) / seen.length;
+  const [low, high] = [seen[0], seen[seen.length - 1]];
+  const level = order.filter(band => (provisionalScheme.points[band] as number) <= points).pop() as Level;
+  return { level, range: low === high ? null : [low, high], points, mixed: low === 'Need Work' && high === 'Great' };
+}
 
 /**
- * Session level from the two task levels. Missing evidence in one task never lowers the other.
- * With two observed levels: Great = 2, Fair = 1, Need Work = 0, mean rounded down.
- * Great with Need Work reports Fair and is marked mixed. Bonus needs one Great.
+ * Evidence coverage for one dimension. observations counts the verified items that were scored,
+ * across both tasks. With exactly one, the level rests on a single observation, so the report
+ * flags it as an indication rather than a stable pattern. The flag does not change the score.
  */
-export function combineLevels(essay: Level, science: Level, bonus = false): { level: Level; mixed: boolean } {
-  const seen = [essay, science].filter((level): level is keyof typeof levelPoints => level in levelPoints);
-  if (bonus) return { level: seen.includes('Great') ? 'Great' : 'Not enough evidence', mixed: false };
-  if (!seen.length) return { level: 'Not enough evidence', mixed: false };
-  if (seen.length === 1) return { level: seen[0], mixed: false };
-  const [a, b] = seen.map(level => levelPoints[level]);
-  return { level: pointLevels[Math.floor((a + b) / 2)], mixed: Math.abs(a - b) === 2 };
+export function evidenceCoverage(items: EvidenceItem[]) {
+  const scored = items.filter(item => item.outcome !== 'insufficient');
+  return {
+    observations: scored.length,
+    observedTasks: tasks.filter(task => scored.some(item => item.task === task)),
+    singleObservation: scored.length === 1,
+  };
+}
+
+export const strengthScheme = { prior: 0.5, credibility: 0.9, wideInterval: 0.6, partialCredit: 0.5 } as const;
+
+/**
+ * Evidence strength for one dimension, shown beside the level and never used in the score.
+ * Each verified item is a trial: met = 1 success, partial = 0.5, missed = 0. With s successes in
+ * n trials, the Jeffreys posterior is Beta(s + 0.5, n − s + 0.5). Its mean estimates how often the
+ * student meets the criterion, and the 90% equal-tailed interval shows how uncertain that is.
+ */
+export function evidenceStrength(dimension: Dimension, items: EvidenceItem[]) {
+  const outcomes = items.filter(item => item.outcome !== 'insufficient').map(item => scoredOutcome(dimension, item));
+  if (!outcomes.length) return null;
+  const n = outcomes.length;
+  const successes = outcomes.reduce((sum, outcome) =>
+    sum + (outcome === 'met' ? 1 : outcome === 'partial' ? strengthScheme.partialCredit : 0), 0);
+  const a = successes + strengthScheme.prior, b = n - successes + strengthScheme.prior;
+  const tail = (1 - strengthScheme.credibility) / 2;
+  const interval: [number, number] = [betaQuantile(tail, a, b), betaQuantile(1 - tail, a, b)];
+  return { n, successes, mean: a / (a + b), interval, wide: interval[1] - interval[0] > strengthScheme.wideInterval };
 }
 
 export function dimensionResult(dimension: Dimension, items: EvidenceItem[]) {
   const levels = Object.fromEntries(tasks.map(task =>
     [task, taskLevel(dimension, items.filter(item => item.task === task))])) as Record<Task, Level>;
-  return { tasks: levels, ...combineLevels(levels.essay, levels.science, dimension === 'bonus') };
+  return {
+    tasks: levels, ...combineLevels(levels.essay, levels.science, dimension === 'bonus'), ...evidenceCoverage(items),
+    strength: dimension === 'bonus' ? null : evidenceStrength(dimension, items),
+  };
 }
 
 export function dimensionLevel(dimension: Dimension, items: EvidenceItem[]): Level {
@@ -115,7 +161,7 @@ export function provisionalScore(feedback: EvidenceFeedback) {
   const results = Object.fromEntries(rubricDimensions.map(dimension =>
     [dimension, dimensionResult(dimension, feedback.evidence[dimension])])) as Record<Dimension, ReturnType<typeof dimensionResult>>;
   const levels = Object.fromEntries(rubricDimensions.map(dimension => [dimension, results[dimension].level])) as Record<Dimension, Level>;
-  const observed = coreDimensions.map(key => provisionalScheme.points[levels[key]]).filter(value => value !== null);
+  const observed = coreDimensions.map(key => results[key].points).filter(value => value !== null);
   const base = observed.length < provisionalScheme.minimumCoreDimensions
     ? null
     : observed.reduce((sum, value) => sum + value, 0) / observed.length;

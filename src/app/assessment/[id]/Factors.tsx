@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
-import { criteria, coreDimensions, evidenceVersion, provisionalScheme, provisionalScore, rubricDimensions, type Dimension, type EvidenceFeedback, type EvidenceItem } from '@/lib/assessment-scoring';
+import { criteria, coreDimensions, evidenceVersion, provisionalScheme, provisionalScore, rubricDimensions, strengthScheme, type Dimension, type EvidenceFeedback, type EvidenceItem } from '@/lib/assessment-scoring';
 import { dimensions, type Ratings } from '@/lib/secondary';
 
+const formatNumber = (value: number) => new Intl.NumberFormat('en', { maximumFractionDigits: 1 }).format(value);
+const percent = (value: number) => Math.round(value * 100) + '%';
+/** Quoted AI text is matched verbatim, so it can carry Markdown emphasis. Show it as plain text. */
+const plain = (text: string) => text.replace(/\*\*|__|`/g, '');
 const levelStyle = { Great: 'supported', Fair: 'insufficient', 'Need Work': 'practise', 'Not enough evidence': 'neutral' };
 const taskLabel = { essay: 'Dramatic Moments', science: 'Choosing a Wind Farm Site' };
 const observations = { met: 'Positive', partial: 'Positive · Partly demonstrated', missed: 'Negative', insufficient: 'Insufficient' };
@@ -23,11 +27,11 @@ function Evidence({ item, dimension }: { item: EvidenceItem; dimension: Dimensio
         <dd>{verificationLabels[item.verification.kind]}
           {item.verification.material && item.verification.material !== item.quote && <> · {item.verification.material}</>}
           {item.verification.claim && <figure>
-            <blockquote>{item.verification.claim.quote}</blockquote>
+            <blockquote>{plain(item.verification.claim.quote)}</blockquote>
             <figcaption>AI claim · Message {item.verification.claim.message}</figcaption>
           </figure>}
           {item.verification.reminder && <figure>
-            <blockquote>{item.verification.reminder.quote}</blockquote>
+            <blockquote>{plain(item.verification.reminder.quote)}</blockquote>
             <figcaption>AI reminder · Message {item.verification.reminder.message}</figcaption>
           </figure>}
         </dd>
@@ -82,8 +86,9 @@ export function Factors({ url, saved, legacy }: { url: string; saved?: EvidenceF
   }
 
   const score = feedback && provisionalScore(feedback);
+  const singleObservations = score ? coreDimensions.filter(key => score.results[key].singleObservation) : [];
   const savedLegacy = !feedback && !!legacy;
-  const canRegenerate = savedLegacy || feedback?.schema === 1;
+  const canRegenerate = savedLegacy || (!!feedback && feedback.schema !== evidenceVersion);
   return <>
     <section className="assessment-score" aria-labelledby="score-title">
       <div>
@@ -92,10 +97,16 @@ export function Factors({ url, saved, legacy }: { url: string; saved?: EvidenceF
           {score ? (score.total === null ? 'Insufficient evidence' : new Intl.NumberFormat('en', { maximumFractionDigits: 1 }).format(score.total) + '%') : error ? 'Unavailable' : 'Reviewing your work…'}
         </p>}
         {feedback && <p>Scoring rules · Version {feedback.schema}</p>}
+        {feedback?.runs && <p>{feedback.runs.valid > 1
+          ? `Consensus of ${feedback.runs.valid} independent reviews · a level counts only when two reviews agree`
+          : `Based on 1 review${feedback.runs.requested > 1 ? ` of ${feedback.runs.requested} requested` : ''}`}</p>}
         {score && <p>Evidence coverage · {score.assessed} of {coreDimensions.length} core dimensions assessed</p>}
+        {score && singleObservations.length > 0 && <p>Single observation · {singleObservations.map(key => dimensions[key]).join(', ')}</p>}
         {score && score.levels.bonus === 'Great' && <p>{score.total === null
           ? 'Bonus earned. An overall score requires more core evidence.'
-          : `Bonus applied · +${new Intl.NumberFormat('en', { maximumFractionDigits: 1 }).format(score.bonusApplied)} points after the cap`}</p>}
+          : score.bonusApplied > 0
+            ? `Bonus applied · +${formatNumber(score.bonusApplied)} points, up to the ${provisionalScheme.cap}% cap`
+            : `Bonus earned · The score is already at the ${provisionalScheme.cap}% cap`}</p>}
         {canRegenerate && <button type="button" disabled={loading} onClick={() => requestFeedback(true)}>
           {loading ? 'Generating updated feedback…' : 'Re-score with current rules'}
         </button>}
@@ -106,23 +117,30 @@ export function Factors({ url, saved, legacy }: { url: string; saved?: EvidenceF
       {!savedLegacy && <details className="assessment-formula">
         <summary>How the provisional score works</summary>
         <p>Great {provisionalScheme.points.Great} · Fair {provisionalScheme.points.Fair} · Need Work {provisionalScheme.points['Need Work']}</p>
-        <p>Each task gets its own level first. Two task levels are averaged and rounded down; one task without evidence does not lower the other.</p>
+        <p>Each task gets its own level first. A dimension's points are the average of its task points, without rounding. When the two task levels differ, both are shown, such as Fair–Great at 80 points. One task without evidence does not lower the other.</p>
         <p>We average core dimensions with evidence. At least {provisionalScheme.minimumCoreDimensions} are required. Great in Bonus adds {provisionalScheme.bonus} points, up to {provisionalScheme.cap}% overall.</p>
         <p>Dimensions with insufficient evidence are excluded from the average. This scale is pending academic calibration.</p>
+        <p>A level based on one verified piece of evidence is marked Single observation. It still counts towards the score, but one observation cannot show a consistent pattern.</p>
+        <p>Evidence strength treats each verified item as one attempt: met counts 1, partly met {strengthScheme.partialCredit} and not met 0. With a Jeffreys prior, Beta({strengthScheme.prior}, {strengthScheme.prior}), it estimates how often you met the criterion, with a {percent(strengthScheme.credibility)} interval. An interval wider than {percent(strengthScheme.wideInterval)} is marked wide. Evidence strength does not change the score.</p>
       </details>}
     </section>
     {(score || legacy) && <section className="report-factors"><h2>{score ? 'Dimension breakdown' : 'Previously saved feedback'}</h2>
       {rubricDimensions.map(key => {
         const row = legacy?.[key];
         const level = score?.levels[key] ?? row?.level;
-        const points = score && key !== 'bonus' ? provisionalScheme.points[score.levels[key]] : null;
+        const range = score?.results[key].range;
+        const points = score && key !== 'bonus' ? score.results[key].points : null;
+        const strength = score?.results[key].strength;
+        const single = !!score && key !== 'bonus' && score.results[key].singleObservation;
         return <details key={key} className="report-factor">
-          <summary><span>{dimensions[key]}</span><span className={'factor-status ' + (level ? levelStyle[level] : 'neutral')}>
-            {level ?? 'Unavailable'}{points !== null ? ` · ${points} points` : ''}
-          </span></summary>
+          <summary><span>{dimensions[key]}</span><span className="factor-badges"><span className={'factor-status ' + (level ? levelStyle[level] : 'neutral')}>
+            {range ? range.join('–') : level ?? 'Unavailable'}{points !== null ? ` · ${formatNumber(points)} points` : ''}
+          </span>{single && <span className="factor-status neutral">Single observation</span>}</span></summary>
           <div className="factor-detail">
             {score && <p className="factor-tasks">{taskLabel.essay} · {score.results[key].tasks.essay} · {taskLabel.science} · {score.results[key].tasks.science}</p>}
             {score?.results[key].mixed && <p className="factor-note">The two tasks gave different evidence for this skill, so the overall level is in between.</p>}
+            {strength && <p className="factor-note">Evidence strength · {strength.n} verified {strength.n === 1 ? 'item' : 'items'} · estimated {percent(strength.mean)} meeting the criterion ({percent(strengthScheme.credibility)} interval {percent(strength.interval[0])}–{percent(strength.interval[1])}){strength.wide ? ' · Wide interval: more evidence is needed' : ''}</p>}
+            {single && <p className="factor-note">This level rests on one verified piece of evidence from {taskLabel[score.results[key].observedTasks[0]]}. Treat it as an indication, not a consistent pattern.</p>}
             {feedback ? <ul className="assessment-evidence-list">{feedback.evidence[key].map((item, index) =>
               <Evidence key={index} dimension={key} item={item} />)}</ul>
               : row && <><p>{row.comment}</p>{Object.entries(row.tasks ?? {}).map(([task, item]) =>
