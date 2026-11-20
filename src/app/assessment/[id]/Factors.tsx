@@ -22,6 +22,10 @@ function Evidence({ item, dimension }: { item: EvidenceItem; dimension: Dimensio
         <dt>Verification</dt>
         <dd>{verificationLabels[item.verification.kind]}
           {item.verification.material && item.verification.material !== item.quote && <> · {item.verification.material}</>}
+          {item.verification.claim && <figure>
+            <blockquote>{item.verification.claim.quote}</blockquote>
+            <figcaption>AI claim · Message {item.verification.claim.message}</figcaption>
+          </figure>}
           {item.verification.reminder && <figure>
             <blockquote>{item.verification.reminder.quote}</blockquote>
             <figcaption>AI reminder · Message {item.verification.reminder.message}</figcaption>
@@ -34,8 +38,10 @@ function Evidence({ item, dimension }: { item: EvidenceItem; dimension: Dimensio
         ? 'No points assigned for this item.'
         : dimension === 'bonus'
           ? 'Supports the bonus rating. The bonus is applied once, subject to the overall cap.'
+          : item.outcome === 'met' && dimension === 'responsible' && item.verification?.kind !== 'student_initiated'
+            ? 'Counts as Fair for this task, because the record does not show that you started this check yourself.'
           : item.outcome === 'met'
-            ? 'Supports Great when all assessed items meet the criteria.'
+            ? 'Supports Great for this task when all its assessed items meet the criteria.'
             : item.outcome === 'missed'
               ? 'Leads to Need Work when no assessed item fully meets the criterion.'
               : 'Counts as partial evidence. The dimension rating considers all verified items.'}</dd></div>
@@ -100,6 +106,7 @@ export function Factors({ url, saved, legacy }: { url: string; saved?: EvidenceF
       {!savedLegacy && <details className="assessment-formula">
         <summary>How the provisional score works</summary>
         <p>Great {provisionalScheme.points.Great} · Fair {provisionalScheme.points.Fair} · Need Work {provisionalScheme.points['Need Work']}</p>
+        <p>Each task gets its own level first. Two task levels are averaged and rounded down; one task without evidence does not lower the other.</p>
         <p>We average core dimensions with evidence. At least {provisionalScheme.minimumCoreDimensions} are required. Great in Bonus adds {provisionalScheme.bonus} points, up to {provisionalScheme.cap}% overall.</p>
         <p>Dimensions with insufficient evidence are excluded from the average. This scale is pending academic calibration.</p>
       </details>}
@@ -114,6 +121,8 @@ export function Factors({ url, saved, legacy }: { url: string; saved?: EvidenceF
             {level ?? 'Unavailable'}{points !== null ? ` · ${points} points` : ''}
           </span></summary>
           <div className="factor-detail">
+            {score && <p className="factor-tasks">{taskLabel.essay} · {score.results[key].tasks.essay} · {taskLabel.science} · {score.results[key].tasks.science}</p>}
+            {score?.results[key].mixed && <p className="factor-note">The two tasks gave different evidence for this skill, so the overall level is in between.</p>}
             {feedback ? <ul className="assessment-evidence-list">{feedback.evidence[key].map((item, index) =>
               <Evidence key={index} dimension={key} item={item} />)}</ul>
               : row && <><p>{row.comment}</p>{Object.entries(row.tasks ?? {}).map(([task, item]) =>
