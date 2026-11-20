@@ -98,3 +98,13 @@
 }
 .factor-tasks, .factor-note { font-size: 13px; }
 .factor-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+
+.factor-task-scores{display:grid;gap:.5rem;margin:.75rem 0}
+.factor-task-scores div{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.25rem 1rem}
+.factor-task-scores dt{font-weight:600}
+.factor-task-scores dd{margin:0}
+.assessment-methodology{margin:.75rem 0;overflow-wrap:anywhere}
+.report-factor .assessment-methodology > summary{display:list-item;padding:.5rem 0;list-style:disclosure-closed;cursor:pointer}
+.report-factor .assessment-methodology[open] > summary{list-style:disclosure-open}
+.report-factor .assessment-methodology > summary::after{content:none}
+.report-factor .assessment-methodology > summary::-webkit-details-marker{display:revert}

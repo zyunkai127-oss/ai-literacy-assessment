@@ -1,6 +1,7 @@
 // SQLite persistence: sessions and an append-only event log. Uses Node's built-in sqlite (Node 22.13+).
 import { reviewFollowThrough } from './collaboration';
 import type { DatabaseSync } from 'node:sqlite';
+import type { AssessmentOwner } from './assessment-access';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -157,17 +158,26 @@ function assessmentDb() {
   database.exec('CREATE TABLE IF NOT EXISTS secondary_assessments (id TEXT PRIMARY KEY, version INTEGER NOT NULL, data TEXT NOT NULL)');
   return database;
 }
-export function insertAssessment(data: import('./secondary').Assessment) {
+export function insertAssessment(data: import('./secondary').Assessment, owner: AssessmentOwner) {
   const id = randomUUID();
-  assessmentDb().prepare('INSERT INTO secondary_assessments VALUES (?, ?, ?)').run(id, data.version, JSON.stringify(data));
+  assessmentDb().prepare('INSERT INTO secondary_assessments VALUES (?, ?, ?)').run(id, data.version, JSON.stringify({ ...data, owner }));
   return id;
 }
-export function readAssessment(id: string): import('./secondary').Assessment | null {
-  const row = assessmentDb().prepare('SELECT data FROM secondary_assessments WHERE id = ?').get(id) as { data: string } | undefined;
+export function readAssessment(id: string, access: { owner: string | null; allowLegacy?: boolean }): import('./secondary').Assessment | null {
+  const row = assessmentDb().prepare(`
+    SELECT json_remove(data, '$.owner') AS data FROM secondary_assessments
+    WHERE id = ? AND (
+      (json_extract(data, '$.owner.digest') = ? AND json_extract(data, '$.owner.expiresAt') > ?)
+      OR (? = 1 AND json_type(data, '$.owner') IS NULL)
+    )
+  `).get(id, access.owner, Date.now(), access.allowLegacy ? 1 : 0) as { data: string } | undefined;
   return row ? JSON.parse(row.data) : null;
 }
 export function updateAssessment(id: string, data: import('./secondary').Assessment) {
   const previous = data.version++;
-  return assessmentDb().prepare('UPDATE secondary_assessments SET version=?, data=? WHERE id=? AND version=?')
-    .run(data.version, JSON.stringify(data), id, previous).changes === 1;
+  const serialized = JSON.stringify(data);
+  return assessmentDb().prepare(`UPDATE secondary_assessments SET version=?, data=CASE
+    WHEN json_type(data, '$.owner') IS NULL THEN ?
+    ELSE json_set(?, '$.owner', json_extract(data, '$.owner')) END WHERE id=? AND version=?`)
+    .run(data.version, serialized, serialized, id, previous).changes === 1;
 }

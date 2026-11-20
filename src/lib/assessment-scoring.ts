@@ -38,11 +38,14 @@ export type Verification = {
   claim?: { message: number; quote: string } | null;
 };
 
-/** 3: evidence is the consensus of several assessor runs. */
-export const evidenceVersion = 3;
+// Schema describes stored evidence; scoringVersion identifies deterministic rules.
+export const evidenceVersion = 4;
+export const scoringVersion = 1;
 
 export type EvidenceItem = {
   task: Task;
+  /** Server-derived reference to an exact span, not an LLM observation identifier. */
+  sourceRef?: { id: string; start: number; end: number };
   quote: string | null;
   firstDraftQuote?: string;
   source: 'essay' | 'submission' | 'chat' | null;
@@ -53,11 +56,15 @@ export type EvidenceItem = {
   improvement: string;
 };
 export type EvidenceFeedback = {
-  schema: 1 | 2 | typeof evidenceVersion;
-  evidence: Record<Dimension, EvidenceItem[]>;
-  /** Assessor runs requested and runs that passed verification. */
+  schema: 1 | 2 | 3 | typeof evidenceVersion;
+  scoringVersion?: number;
   runs?: { requested: number; valid: number };
+  evidence: Record<Dimension, EvidenceItem[]>;
 };
+
+export function hasCurrentScoring(feedback: EvidenceFeedback): boolean {
+  return feedback.schema === evidenceVersion && feedback.scoringVersion === scoringVersion;
+}
 
 // Provisional settings pending academic calibration.
 export const provisionalScheme = {
@@ -110,34 +117,31 @@ export function combineLevels(essay: Level, science: Level, bonus = false): {
   return { level, range: low === high ? null : [low, high], points, mixed: low === 'Need Work' && high === 'Great' };
 }
 
-/**
- * Evidence coverage for one dimension. observations counts the verified items that were scored,
- * across both tasks. With exactly one, the level rests on a single observation, so the report
- * flags it as an indication rather than a stable pattern. The flag does not change the score.
- */
+/** Counts verified items, not distinct behaviours or independent assessment opportunities. */
 export function evidenceCoverage(items: EvidenceItem[]) {
   const scored = items.filter(item => item.outcome !== 'insufficient');
   return {
-    observations: scored.length,
+    verifiedEvidenceItems: scored.length,
     observedTasks: tasks.filter(task => scored.some(item => item.task === task)),
-    singleObservation: scored.length === 1,
+    singleEvidenceItem: scored.length === 1,
   };
 }
 
 export const strengthScheme = { prior: 0.5, credibility: 0.9, wideInterval: 0.6, partialCredit: 0.5 } as const;
 
 /**
- * Evidence strength for one dimension, shown beside the level and never used in the score.
- * Each verified item is a trial: met = 1 success, partial = 0.5, missed = 0. With s successes in
- * n trials, the Jeffreys posterior is Beta(s + 0.5, n − s + 0.5). Its mean estimates how often the
- * student meets the criterion, and the 90% equal-tailed interval shows how uncertain that is.
+ * Exploratory task-summary indicator, never used in the provisional score.
+ * One summary per task prevents extra quotations from increasing n. Tasks can still be correlated.
+ * Fair = half credit is a heuristic fractional likelihood, not a binary observation or validated
+ * probability model of ability. Beta(s + 0.5, n - s + 0.5) is descriptive under those assumptions.
  */
 export function evidenceStrength(dimension: Dimension, items: EvidenceItem[]) {
-  const outcomes = items.filter(item => item.outcome !== 'insufficient').map(item => scoredOutcome(dimension, item));
+  const outcomes = tasks.map(task => taskLevel(dimension, items.filter(item => item.task === task)))
+    .filter(level => level !== 'Not enough evidence');
   if (!outcomes.length) return null;
   const n = outcomes.length;
   const successes = outcomes.reduce((sum, outcome) =>
-    sum + (outcome === 'met' ? 1 : outcome === 'partial' ? strengthScheme.partialCredit : 0), 0);
+    sum + (outcome === 'Great' ? 1 : outcome === 'Fair' ? strengthScheme.partialCredit : 0), 0);
   const a = successes + strengthScheme.prior, b = n - successes + strengthScheme.prior;
   const tail = (1 - strengthScheme.credibility) / 2;
   const interval: [number, number] = [betaQuantile(tail, a, b), betaQuantile(1 - tail, a, b)];
@@ -158,6 +162,7 @@ export function dimensionLevel(dimension: Dimension, items: EvidenceItem[]): Lev
 }
 
 export function provisionalScore(feedback: EvidenceFeedback) {
+  if (!hasCurrentScoring(feedback)) throw Error('Saved feedback needs explicit re-assessment before current scoring.');
   const results = Object.fromEntries(rubricDimensions.map(dimension =>
     [dimension, dimensionResult(dimension, feedback.evidence[dimension])])) as Record<Dimension, ReturnType<typeof dimensionResult>>;
   const levels = Object.fromEntries(rubricDimensions.map(dimension => [dimension, results[dimension].level])) as Record<Dimension, Level>;

@@ -1,3 +1,4 @@
+import { assessmentAccess } from '../../../../lib/assessment-access';
 import { json, fail } from '../../../../lib/api';
 import { activeChats } from '../../../../lib/chatlock';
 import { chatModelId, streamReply } from '../../../../lib/llm';
@@ -9,15 +10,17 @@ import { readAssessment, updateAssessment } from '../../../../lib/store';
 
 type Context = { params: Promise<{ id: string }> };
 
-export async function GET(_: Request, ctx: Context) {
-  const data = readAssessment((await ctx.params).id);
-  return data ? json({ ...data, chatModel: chatModelId() }) : fail(404, 'Activity not found.');
+export async function GET(req: Request, ctx: Context) {
+  const data = readAssessment((await ctx.params).id, assessmentAccess(req));
+  const response = data ? json({ ...data, chatModel: chatModelId() }) : fail(404, 'Activity not found.');
+  response.headers.set('Cache-Control', 'private, no-store');
+  return response;
 }
 
 export async function POST(req: Request, ctx: Context) {
   const { id } = await ctx.params;
   const input = await req.json().catch(() => null);
-  const data = readAssessment(id);
+  const data = readAssessment(id, assessmentAccess(req));
   if (!data) return fail(404, 'Activity not found.');
   if (activeChats.has(id)) return fail(409, 'The assistant is already replying. Try again shortly.');
   if (input?.version !== data.version) return fail(409, 'Your activity changed. Refresh to continue.');

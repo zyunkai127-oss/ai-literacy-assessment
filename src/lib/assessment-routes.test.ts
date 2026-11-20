@@ -2,19 +2,26 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GET, POST } from '../app/api/assessment/[id]/route';
 import { POST as feedback } from '../app/api/assessment/[id]/feedback/route';
 import { chatModelId, streamReply } from './llm';
+import { evidenceVersion, scoringVersion } from './assessment-scoring';
 import { newAssessment, type Ratings } from './secondary';
-import { insertAssessment, readAssessment } from './store';
-import { evidenceVersion } from './assessment-scoring';
+import { insertAssessment as insert, readAssessment as read } from './store';
+import { assessmentOwnerDigest } from './assessment-access';
+import type { Assessment } from './secondary';
+import { POST as create } from '../app/api/assessment/route';
+
+const cookie = 'alc-assessment=' + 'A'.repeat(43);
+const owner = assessmentOwnerDigest('A'.repeat(43));
+const insertAssessment = (data: Assessment) => insert(data, { digest: owner, expiresAt: Date.now() + 60_000 });
+const readAssessment = (id: string) => read(id, { owner });
 
 vi.mock('./llm', () => ({ chatModelId: vi.fn(() => 'test-model'), streamReply: vi.fn() }));
 
 const stream = vi.mocked(streamReply);
 vi.stubEnv('DB_PATH', ':memory:');
-// One assessor run per report keeps each mocked provider reply aligned with one request.
 vi.stubEnv('ASSESSOR_RUNS', '1');
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 const request = (action: string, text: string, version = 0, work = '') =>
-  new Request('http://localhost/api/assessment/test', { method: 'POST', body: JSON.stringify({ action, text, version, work }) });
+  new Request('http://localhost/api/assessment/test', { method: 'POST', headers: { cookie }, body: JSON.stringify({ action, text, version, work }) });
 
 afterEach(() => stream.mockReset());
 
@@ -90,7 +97,7 @@ it('preserves task transitions and requires an explicit request to regenerate sa
   const legacy = { effective: { level: 'Great', comment: 'Previously saved feedback.' } } as Ratings;
   const legacyId = insertAssessment({ ...data, ratings: legacy });
   const regenerate = () => new Request('http://localhost/feedback', {
-    method: 'POST', body: JSON.stringify({ regenerate: true }),
+    method: 'POST', headers: { cookie }, body: JSON.stringify({ regenerate: true }),
   });
   expect((await feedback(request('', ''), ctx(legacyId))).status).toBe(409);
   expect(stream).not.toHaveBeenCalled();
@@ -108,6 +115,7 @@ it('preserves task transitions and requires an explicit request to regenerate sa
   expect(response.status).toBe(200);
   const result = await response.json();
   expect(result.schema).toBe(evidenceVersion);
+  expect(result.scoringVersion).toBe(scoringVersion);
   expect(readAssessment(legacyId)).toMatchObject({ feedback: result, ratings: legacy });
   expect(await (await feedback(request('', ''), ctx(legacyId))).json()).toEqual(result);
   expect(stream).toHaveBeenCalledTimes(2);
@@ -149,6 +157,28 @@ it('requests the flat feedback schema and can retry when a provider returns grou
   });
 });
 
+
+it.each([1, 2, 3] as const)('preserves schema %s unversioned feedback until explicitly re-assessed', async schema => {
+  const original = { schema, evidence: { effective: [], critical: [], responsible: [], bonus: [] } };
+  const id = insertAssessment({ ...newAssessment(), stage: 'feedback', feedback: original });
+  expect(await (await feedback(request('', ''), ctx(id))).json()).toEqual(original);
+  expect(stream).not.toHaveBeenCalled();
+  stream.mockImplementationOnce(async function* () { return { error: 'Private provider details' }; });
+  const regenerate = () => new Request('http://localhost/feedback', { method: 'POST', headers: { cookie }, body: JSON.stringify({ regenerate: true }) });
+  const failed = await feedback(regenerate(), ctx(id));
+  expect(failed.status).toBe(503);
+  expect(await failed.text()).not.toContain('Private');
+  expect(readAssessment(id)?.feedback).toEqual(original);
+  const rows = ['essay', 'science'].map(task => ({ task, sourceId: '', quote: '', outcome: 'insufficient', reason: 'No evidence.', improvement: 'Compare a claim.' }));
+  stream.mockImplementationOnce(async function* () {
+    yield JSON.stringify({ effective: rows, critical: rows, responsible: rows, bonus: rows });
+    return { model: 'test-model' };
+  });
+  expect((await feedback(regenerate(), ctx(id))).status).toBe(200);
+  expect(readAssessment(id)?.feedback).toMatchObject({ schema: evidenceVersion, scoringVersion });
+  expect(stream).toHaveBeenCalledTimes(2);
+});
+
 it('requests three independent reviews by default and keeps the report when one fails', async () => {
   vi.stubEnv('ASSESSOR_RUNS', '');
   try {
@@ -168,5 +198,60 @@ it('requests three independent reviews by default and keeps the report when one 
     expect(await response.json()).toMatchObject({ schema: evidenceVersion, runs: { requested: 3, valid: 2 } });
   } finally {
     vi.stubEnv('ASSESSOR_RUNS', '1');
+  }
+});
+
+it('requires the owning browser on read, submit and feedback, and keeps access after saving', async () => {
+  const url = 'https://example.test/api/assessment';
+  const start = () => create(new Request(url, { method: 'POST', body: JSON.stringify({ understood: true }) }));
+  const response = await start();
+  const { id } = await response.json();
+  const grant = response.headers.get('set-cookie')!;
+  expect(grant).toContain('HttpOnly; SameSite=Strict');
+  expect(grant).toContain('Secure');
+  expect(grant).toContain('Path=/api/assessment/' + id + ';');
+  const ownCookie = grant.split(';')[0];
+  const otherCookie = (await start()).headers.get('set-cookie')!.split(';')[0];
+  const req = (cookie: string, body?: object) => new Request(url + '/' + id, {
+    headers: { cookie }, ...(body && { method: 'POST', body: JSON.stringify(body) }),
+  });
+  const submission = { action: 'submit', text: 'Private synthetic draft.', version: 0 };
+  for (const credential of ['', otherCookie]) {
+    expect((await GET(req(credential), ctx(id))).status).toBe(404);
+    expect((await POST(req(credential, submission), ctx(id))).status).toBe(404);
+    expect((await feedback(req(credential, {}), ctx(id))).status).toBe(404);
+  }
+  expect((await POST(req(ownCookie, submission), ctx(id))).status).toBe(200);
+  const after = await GET(req(ownCookie), ctx(id));
+  expect(after.headers.get('cache-control')).toBe('private, no-store');
+  const saved = await after.json();
+  expect(saved.draft).toBe(submission.text);
+  expect(saved).not.toHaveProperty('owner');
+  expect((await GET(req(otherCookie), ctx(id))).status).toBe(404);
+  const { __alcDb } = globalThis as unknown as { __alcDb: import('node:sqlite').DatabaseSync };
+  __alcDb.prepare("UPDATE secondary_assessments SET data=json_set(data, '$.owner.expiresAt', 0) WHERE id=?").run(id);
+  expect((await GET(req(ownCookie), ctx(id))).status).toBe(404);
+  expect(stream).not.toHaveBeenCalled();
+});
+
+it('allows ownerless reports only in explicitly enabled loopback development', async () => {
+  const id = insertAssessment({ ...newAssessment(), stage: 'feedback' });
+  const { __alcDb } = globalThis as unknown as { __alcDb: import('node:sqlite').DatabaseSync };
+  __alcDb.prepare("UPDATE secondary_assessments SET data=json_remove(data, '$.owner') WHERE id=?").run(id);
+
+  const local = new Request('http://127.0.0.1:3000/api/assessment/' + id);
+  const remote = new Request('https://example.test/api/assessment/' + id);
+  vi.stubEnv('NODE_ENV', 'development');
+  vi.stubEnv('ALLOW_LOCAL_LEGACY_ASSESSMENTS', '');
+  try {
+    expect((await GET(local, ctx(id))).status).toBe(404);
+    vi.stubEnv('ALLOW_LOCAL_LEGACY_ASSESSMENTS', '1');
+    expect((await GET(local, ctx(id))).status).toBe(200);
+    expect((await GET(remote, ctx(id))).status).toBe(404);
+    vi.stubEnv('NODE_ENV', 'production');
+    expect((await GET(local, ctx(id))).status).toBe(404);
+  } finally {
+    vi.stubEnv('NODE_ENV', 'test');
+    vi.stubEnv('ALLOW_LOCAL_LEGACY_ASSESSMENTS', '');
   }
 });
