@@ -4,6 +4,8 @@ import { dimensions, type Ratings } from '@/lib/secondary';
 
 const formatNumber = (value: number) => new Intl.NumberFormat('en', { maximumFractionDigits: 1 }).format(value);
 const percent = (value: number) => Math.round(value * 100) + '%';
+/** Quoted AI text is matched verbatim, so it can carry Markdown emphasis. Show it as plain text. */
+const plain = (text: string) => text.replace(/\*\*|__|`/g, '');
 const levelStyle = { Great: 'supported', Fair: 'insufficient', 'Need Work': 'practise', 'Not enough evidence': 'neutral' };
 const taskLabel = { essay: 'Dramatic Moments', science: 'Choosing a Wind Farm Site' };
 const observations = { met: 'Positive', partial: 'Positive · Partly demonstrated', missed: 'Negative', insufficient: 'Insufficient' };
@@ -25,11 +27,11 @@ function Evidence({ item, dimension }: { item: EvidenceItem; dimension: Dimensio
         <dd>{verificationLabels[item.verification.kind]}
           {item.verification.material && item.verification.material !== item.quote && <> · {item.verification.material}</>}
           {item.verification.claim && <figure>
-            <blockquote>{item.verification.claim.quote}</blockquote>
+            <blockquote>{plain(item.verification.claim.quote)}</blockquote>
             <figcaption>AI claim · Message {item.verification.claim.message}</figcaption>
           </figure>}
           {item.verification.reminder && <figure>
-            <blockquote>{item.verification.reminder.quote}</blockquote>
+            <blockquote>{plain(item.verification.reminder.quote)}</blockquote>
             <figcaption>AI reminder · Message {item.verification.reminder.message}</figcaption>
           </figure>}
         </dd>
@@ -86,7 +88,7 @@ export function Factors({ url, saved, legacy }: { url: string; saved?: EvidenceF
   const score = feedback && provisionalScore(feedback);
   const singleObservations = score ? coreDimensions.filter(key => score.results[key].singleObservation) : [];
   const savedLegacy = !feedback && !!legacy;
-  const canRegenerate = savedLegacy || feedback?.schema === 1;
+  const canRegenerate = savedLegacy || (!!feedback && feedback.schema !== evidenceVersion);
   return <>
     <section className="assessment-score" aria-labelledby="score-title">
       <div>
@@ -95,11 +97,16 @@ export function Factors({ url, saved, legacy }: { url: string; saved?: EvidenceF
           {score ? (score.total === null ? 'Insufficient evidence' : new Intl.NumberFormat('en', { maximumFractionDigits: 1 }).format(score.total) + '%') : error ? 'Unavailable' : 'Reviewing your work…'}
         </p>}
         {feedback && <p>Scoring rules · Version {feedback.schema}</p>}
+        {feedback?.runs && <p>{feedback.runs.valid > 1
+          ? `Consensus of ${feedback.runs.valid} independent reviews · a level counts only when two reviews agree`
+          : `Based on 1 review${feedback.runs.requested > 1 ? ` of ${feedback.runs.requested} requested` : ''}`}</p>}
         {score && <p>Evidence coverage · {score.assessed} of {coreDimensions.length} core dimensions assessed</p>}
         {score && singleObservations.length > 0 && <p>Single observation · {singleObservations.map(key => dimensions[key]).join(', ')}</p>}
         {score && score.levels.bonus === 'Great' && <p>{score.total === null
           ? 'Bonus earned. An overall score requires more core evidence.'
-          : `Bonus applied · +${new Intl.NumberFormat('en', { maximumFractionDigits: 1 }).format(score.bonusApplied)} points after the cap`}</p>}
+          : score.bonusApplied > 0
+            ? `Bonus applied · +${formatNumber(score.bonusApplied)} points, up to the ${provisionalScheme.cap}% cap`
+            : `Bonus earned · The score is already at the ${provisionalScheme.cap}% cap`}</p>}
         {canRegenerate && <button type="button" disabled={loading} onClick={() => requestFeedback(true)}>
           {loading ? 'Generating updated feedback…' : 'Re-score with current rules'}
         </button>}

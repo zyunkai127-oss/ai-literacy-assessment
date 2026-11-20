@@ -24,8 +24,8 @@ Two AI roles are kept separate.
 
 Scoring then runs in three layers. The model identifies evidence, the server verifies it, and fixed rules produce the levels.
 
-1. **Evidence identification** (`src/app/api/assessment/[id]/feedback/route.ts`). The assessor returns structured items in a JSON schema. Each item gives a task, an exact quotation, its source, an outcome (`met`, `partial`, `missed` or `insufficient`), a reason and a next step. It never returns points.
-2. **Server verification** (`src/lib/assessment-evidence.ts`). An item is kept only if its quotation appears verbatim in the cited source. Effective must cite the final submission. A Critical essay item must pair a revised passage with the matching first-draft passage. A Responsible item must link to a complete earlier AI statement and name the material checked. The server also confirms who started the check. One student action supports only one process dimension.
+1. **Evidence identification** (`src/app/api/assessment/[id]/feedback/route.ts`). Three independent assessor runs return structured items in a JSON schema. Each item gives a task, an exact quotation, its source, an outcome (`met`, `partial`, `missed` or `insufficient`), a reason and a next step. It never returns points.
+2. **Server verification and consensus** (`src/lib/assessment-evidence.ts`). An item is kept only if its quotation appears verbatim in the cited source. Effective must cite the final submission. A Critical essay item must pair a revised passage with the matching first-draft passage. A Responsible item must link to a complete earlier AI statement and name the material checked. The server also confirms who started the check. One student action supports only one process dimension. Each run is verified separately. A task level counts only when at least two runs reach it; otherwise that task has not enough evidence for the dimension. The merged evidence is verified again.
 3. **Levels and score** (`src/lib/assessment-scoring.ts`). Each task gets its own level: Great, Fair, Need Work or Not enough evidence. A dimension's points are the average of its task points, without rounding, so Great with Fair gives 80 and is shown as Fair–Great. Missing evidence in one task never lowers the other. A Responsible check counts as Great only when the student started it.
 
 The server checks up to four candidates per task and dimension and keeps the first two that pass, so a rejected candidate never displaces a valid one.
@@ -41,6 +41,8 @@ The provisional score maps Great, Fair and Need Work to 100, 60 and 20. It avera
 
 Each core dimension also shows its **evidence strength**, which does not change the score. Each verified item counts as one attempt: met = 1, partly met = 0.5, not met = 0. With s successes in n attempts, the Jeffreys posterior Beta(s + 0.5, n − s + 0.5) gives an estimated rate and a 90% interval (`src/lib/beta.ts`). An interval wider than 0.6 is marked wide. With at most four items per dimension, most intervals are wide, and the report says so.
 
+In live tests, a single run gave the same work different Responsible levels on repeated scoring. With three runs, repeated reports agreed on most dimensions, with occasional differences. Set `ASSESSOR_RUNS` (1–5) to change the number of runs. A report takes about 25–30 seconds.
+
 Saved reports are cached, so the same work always shows the same feedback. Reports saved under earlier rules can be re-scored from the report page.
 
 ## Run locally
@@ -52,7 +54,7 @@ npm install
 cp -n .env.example .env.local
 ```
 
-Set `ANTHROPIC_API_KEY` in `.env.local` for live chat and feedback. `CHAT_MODEL` selects the model, `claude-haiku-5-5` by default. Then start the app and open http://localhost:3000:
+Set `ANTHROPIC_API_KEY` in `.env.local` for live chat and feedback. `CHAT_MODEL` selects the model, `claude-haiku-5-5` by default, and `ASSESSOR_RUNS` sets the number of assessor runs per report, 3 by default. Then start the app and open http://localhost:3000:
 
 ```sh
 npm run dev

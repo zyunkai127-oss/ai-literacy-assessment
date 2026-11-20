@@ -47,12 +47,12 @@ export function toApiMessages(history: Msg[]): { role: 'user' | 'assistant'; con
   return out;
 }
 
-export async function* streamReply(history: Msg[], persona: Persona | string, options?: { thinking?: 'disabled' | 'low'; format?: Anthropic.JSONOutputFormat }): AsyncGenerator<string, { error?: string; model?: string }> {
+export async function* streamReply(history: Msg[], persona: Persona | string, options?: { thinking?: 'disabled' | 'low'; format?: Anthropic.JSONOutputFormat; maxTokens?: number; timeoutMs?: number }): AsyncGenerator<string, { error?: string; model?: string }> {
   try {
     const client = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY?.trim() || null,
       authToken: process.env.ANTHROPIC_AUTH_TOKEN?.trim() || null,
-      timeout: 30_000,
+      timeout: options?.timeoutMs ?? 30_000,
       maxRetries: 0,
     });
     const messages = toApiMessages(history);
@@ -61,7 +61,7 @@ export async function* streamReply(history: Msg[], persona: Persona | string, op
       model: chatModelId(),
       // Thinking is on by default on this model and counts against max_tokens, so leave room for it:
       // at 1024 a reply could be cut off, or come back empty, before any visible text. Reply length is set in the prompt.
-      max_tokens: 8000,
+      max_tokens: options?.maxTokens ?? 8000,
       ...(options?.thinking === 'disabled' && { thinking: { type: 'disabled' as const } }),
       ...(options?.thinking === 'low' && { thinking: { type: 'adaptive' as const } }),
       ...((options?.thinking === 'low' || options?.format) && {

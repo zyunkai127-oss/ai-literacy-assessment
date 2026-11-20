@@ -73,7 +73,7 @@ PROCEDURE FOR EACH TASK AND DIMENSION
    - Bonus: only the student's own actions count.
 2. Response. With no opportunity, or an opportunity but no observable student response, record not enough evidence. The one exception: a demonstrably false AI claim that reached the final work counts against Responsible.
 3. Judgement. Apply the rubric to this task alone. The other task must not change it.
-4. Initiator. The AI suggestion or counterargument that creates a Critical opportunity is not a reminder; the student's response to it counts as their own. For Responsible, a reminder is an AI message that told the student to check or what to check.
+4. Initiator. The AI suggestion or counterargument that creates a Critical opportunity is not a reminder; the student's response to it counts as their own. For Responsible, a reminder is an AI message that told the student to check or what to check. With no such message, a personal check is student-initiated.
 
 ONE EVENT, ONE PROCESS DIMENSION
 Do not use the same student action as the main evidence for multiple process dimensions. Effective is a separate judgement of the final work and can cite a passage used in a process judgement.

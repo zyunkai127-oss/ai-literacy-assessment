@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateEvidence } from './assessment-evidence';
+import { consensusEvidence, validateEvidence } from './assessment-evidence';
 import { combineLevels, evidenceStrength, provisionalScore, type Verification } from './assessment-scoring';
 import { newAssessment } from './secondary';
 
@@ -368,5 +368,43 @@ describe('evidenceStrength', () => {
 
   it('returns null without verified items', () => {
     expect(evidenceStrength('critical', [scored('insufficient')])).toBeNull();
+  });
+});
+
+describe('consensusEvidence', () => {
+  const level = (feedback: ReturnType<typeof consensusEvidence>, dimension: 'effective' | 'responsible', task: string) =>
+    provisionalScore(feedback).results[dimension].tasks[task as 'essay' | 'science'];
+
+  it('keeps a task level that two of three runs reach and drops one that only a single run reaches', () => {
+    const withCheck = { ...results(), responsible: [gap('essay'), verified('met')] };
+    const without = { ...results(), responsible: [gap('essay'), gap('science')] };
+    const missed = { ...results(), effective: [item('essay', 'revision', draft, 'missed'), item('science', 'science', recommendation)] };
+    const majority = consensusEvidence(data, [withCheck, without, withCheck]);
+    expect(majority.runs).toEqual({ requested: 3, valid: 3 });
+    expect(level(majority, 'responsible', 'science')).toBe('Great');
+    const minority = consensusEvidence(data, [withCheck, without, without]);
+    expect(level(minority, 'responsible', 'science')).toBe('Not enough evidence');
+    expect(level(consensusEvidence(data, [missed, withCheck, without]), 'effective', 'essay')).toBe('Great');
+  });
+
+  it('reports no level when all runs disagree and falls back to a single valid run', () => {
+    const great = { ...results(), effective: [item('essay', 'revision', draft), item('science', 'science', recommendation)] };
+    const partial = { ...great, effective: [item('essay', 'revision', draft, 'partial'), great.effective[1]] };
+    const missed = { ...great, effective: [item('essay', 'revision', draft, 'missed'), great.effective[1]] };
+    const split = consensusEvidence(data, [great, partial, missed]);
+    expect(level(split, 'effective', 'essay')).toBe('Not enough evidence');
+    expect(level(split, 'effective', 'science')).toBe('Great');
+    const single = consensusEvidence(data, [null, 'not json', great]);
+    expect(single.runs).toEqual({ requested: 3, valid: 1 });
+    expect(level(single, 'effective', 'essay')).toBe('Great');
+    expect(() => consensusEvidence(data, [null, null])).toThrow();
+  });
+
+  it('applies one-action-one-dimension again after merging rows from different runs', () => {
+    const asResponsible = { ...results(), responsible: [gap('essay'), verified('met')], critical: [gap('essay'), gap('science')] };
+    const asCritical = { ...results(), responsible: [gap('essay'), gap('science')], critical: [gap('essay'), item('science', 'science-chat-2', check)] };
+    const merged = consensusEvidence(data, [asResponsible, asCritical, { ...asResponsible, critical: asCritical.critical }]);
+    expect(level(merged, 'responsible', 'science')).toBe('Great');
+    expect(merged.evidence.critical.find(entry => entry.task === 'science')).toMatchObject({ outcome: 'insufficient', quote: null });
   });
 });

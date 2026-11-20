@@ -38,7 +38,8 @@ export type Verification = {
   claim?: { message: number; quote: string } | null;
 };
 
-export const evidenceVersion = 2;
+/** 3: evidence is the consensus of several assessor runs. */
+export const evidenceVersion = 3;
 
 export type EvidenceItem = {
   task: Task;
@@ -51,7 +52,12 @@ export type EvidenceItem = {
   reason: string;
   improvement: string;
 };
-export type EvidenceFeedback = { schema: 1 | typeof evidenceVersion; evidence: Record<Dimension, EvidenceItem[]> };
+export type EvidenceFeedback = {
+  schema: 1 | 2 | typeof evidenceVersion;
+  evidence: Record<Dimension, EvidenceItem[]>;
+  /** Assessor runs requested and runs that passed verification. */
+  runs?: { requested: number; valid: number };
+};
 
 // Provisional settings pending academic calibration.
 export const provisionalScheme = {

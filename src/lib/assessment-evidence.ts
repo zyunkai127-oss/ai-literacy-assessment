@@ -1,5 +1,5 @@
 import {
-  evidenceVersion, outcomes, rubricDimensions, tasks, verificationKinds,
+  evidenceVersion, outcomes, rubricDimensions, taskLevel, tasks, verificationKinds,
   type EvidenceFeedback, type EvidenceItem, type Outcome, type Task, type Verification,
 } from './assessment-scoring';
 import type { Assessment } from './secondary';
@@ -263,4 +263,36 @@ function missingEvidence(task: Task, dimension: keyof typeof nextStep): Evidence
     reason: 'There is no verified passage available for this criterion in this task.',
     improvement: nextStep[dimension][task],
   };
+}
+
+/**
+ * Combine several independent assessor runs. For each dimension and task, a task level counts only
+ * when at least two verified runs reach it. The rows of the first run with that level are kept and
+ * the merged rows are verified again, so one student action still supports one process dimension.
+ * With no agreement, the task has not enough evidence for that dimension.
+ */
+export function consensusEvidence(data: Assessment, raws: unknown[]): EvidenceFeedback {
+  const runs = raws.flatMap(raw => {
+    try { return [{ raw: raw as Record<string, unknown[]>, feedback: validateEvidence(data, raw) }]; } catch { return []; }
+  });
+  if (!runs.length) throw Error('No valid assessor run');
+  if (runs.length === 1) return { ...runs[0].feedback, runs: { requested: raws.length, valid: 1 } };
+
+  const merged = Object.fromEntries(rubricDimensions.map(dimension => [dimension, [] as unknown[]]));
+  for (const dimension of rubricDimensions) {
+    for (const task of tasks) {
+      const levels = runs.map(run => taskLevel(dimension, run.feedback.evidence[dimension].filter(item => item.task === task)));
+      const agreed = levels.find(level => levels.filter(other => other === level).length >= 2);
+      if (!agreed) continue;
+      const chosen = runs[levels.indexOf(agreed)];
+      merged[dimension].push(...chosen.raw[dimension].filter(row => isRecord(row) && row.task === task));
+    }
+  }
+  return { ...validateEvidence(data, merged), runs: { requested: raws.length, valid: runs.length } };
+}
+
+/** Assessor runs per report: ASSESSOR_RUNS, from 1 to 5, default 3. */
+export function assessorRuns() {
+  const value = Number(process.env.ASSESSOR_RUNS);
+  return Number.isInteger(value) && value >= 1 && value <= 5 ? value : 3;
 }

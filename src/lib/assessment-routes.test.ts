@@ -4,11 +4,14 @@ import { POST as feedback } from '../app/api/assessment/[id]/feedback/route';
 import { chatModelId, streamReply } from './llm';
 import { newAssessment, type Ratings } from './secondary';
 import { insertAssessment, readAssessment } from './store';
+import { evidenceVersion } from './assessment-scoring';
 
 vi.mock('./llm', () => ({ chatModelId: vi.fn(() => 'test-model'), streamReply: vi.fn() }));
 
 const stream = vi.mocked(streamReply);
 vi.stubEnv('DB_PATH', ':memory:');
+// One assessor run per report keeps each mocked provider reply aligned with one request.
+vi.stubEnv('ASSESSOR_RUNS', '1');
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 const request = (action: string, text: string, version = 0, work = '') =>
   new Request('http://localhost/api/assessment/test', { method: 'POST', body: JSON.stringify({ action, text, version, work }) });
@@ -43,7 +46,7 @@ describe.each([
     expect(stream.mock.calls[1][0][0].text).toContain('Current work.');
     expect(stream.mock.calls[1][0][0].text.includes('Original argument.')).toBe(stage === 'revision');
     expect(String(stream.mock.calls[1][1]).toLowerCase()).toContain(system.toLowerCase());
-    expect(stream.mock.calls[1][2]).toEqual({ thinking: scienceThinking ? 'disabled' : undefined });
+    expect(stream.mock.calls[1][2]).toEqual(scienceThinking ? { thinking: 'low', maxTokens: 16000 } : {});
     expect(String(stream.mock.calls[1][1])).toContain('AI learning collaborator');
     expect((await GET(request('chat', message), ctx(id))).status).toBe(200);
     expect((await POST(request('chat', message), ctx(id))).status).toBe(409);
@@ -104,7 +107,7 @@ it('preserves task transitions and requires an explicit request to regenerate sa
   const response = await feedback(regenerate(), ctx(legacyId));
   expect(response.status).toBe(200);
   const result = await response.json();
-  expect(result.schema).toBe(2);
+  expect(result.schema).toBe(evidenceVersion);
   expect(readAssessment(legacyId)).toMatchObject({ feedback: result, ratings: legacy });
   expect(await (await feedback(request('', ''), ctx(legacyId))).json()).toEqual(result);
   expect(stream).toHaveBeenCalledTimes(2);
@@ -133,7 +136,7 @@ it('requests the flat feedback schema and can retry when a provider returns grou
   expect((await feedback(request('', ''), ctx(id))).status).toBe(503);
   expect(readAssessment(id)).toMatchObject({ version: 0, revision: 'Saved essay.' });
   expect((await feedback(request('', ''), ctx(id))).status).toBe(200);
-  expect(readAssessment(id)?.feedback?.schema).toBe(2);
+  expect(readAssessment(id)?.feedback?.schema).toBe(evidenceVersion);
   expect(stream.mock.calls[1][2]?.format).toMatchObject({
     type: 'json_schema',
     schema: {
@@ -144,4 +147,26 @@ it('requests the flat feedback schema and can retry when a provider returns grou
       },
     },
   });
+});
+
+it('requests three independent reviews by default and keeps the report when one fails', async () => {
+  vi.stubEnv('ASSESSOR_RUNS', '');
+  try {
+    const id = insertAssessment({ ...newAssessment(), stage: 'feedback', revision: 'Saved essay.' });
+    const gap = { sourceId: '', quote: '', firstDraftQuote: '', outcome: 'insufficient', reason: 'No example.', improvement: 'Give an example.' };
+    const rows = [{ ...gap, task: 'essay' }, { ...gap, task: 'science' }];
+    const reply = async function* () {
+      yield JSON.stringify({ effective: rows, critical: rows, responsible: rows, bonus: rows });
+      return { model: 'test-model' };
+    };
+    stream.mockImplementationOnce(reply)
+      .mockImplementationOnce(async function* () { return { error: 'Provider unavailable' }; })
+      .mockImplementationOnce(reply);
+    const response = await feedback(request('', ''), ctx(id));
+    expect(response.status).toBe(200);
+    expect(stream).toHaveBeenCalledTimes(3);
+    expect(await response.json()).toMatchObject({ schema: evidenceVersion, runs: { requested: 3, valid: 2 } });
+  } finally {
+    vi.stubEnv('ASSESSOR_RUNS', '1');
+  }
 });
