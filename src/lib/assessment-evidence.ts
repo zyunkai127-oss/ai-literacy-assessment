@@ -1,5 +1,5 @@
 import {
-  evidenceVersion, outcomes, rubricDimensions, taskLevel, tasks, verificationKinds,
+  evidenceVersion, scoringVersion, outcomes, rubricDimensions, taskLevel, tasks, verificationKinds,
   type EvidenceFeedback, type EvidenceItem, type Outcome, type Task, type Verification,
 } from './assessment-scoring';
 import type { Assessment } from './secondary';
@@ -87,7 +87,7 @@ const maxAccepted = 2;
 export function validateEvidence(data: Assessment, raw: unknown): EvidenceFeedback {
   if (!isRecord(raw)) throw Error('Invalid rubric results');
   const sources = evidenceSources(data);
-  const usedActions: { text: string; quote: string }[] = [];
+  const usedActions: { task: Task; text: string; quote: string }[] = [];
   const usedFinalWork: typeof usedActions = [];
   const evidence = {} as EvidenceFeedback['evidence'];
   // A source check counts for Responsible first, so Critical needs a different decision.
@@ -118,6 +118,8 @@ export function validateEvidence(data: Assessment, raw: unknown): EvidenceFeedba
         if (!isText(quote, 500)) continue;
         const source = sources.find(entry => entry.id === sourceId && entry.task === task);
         if (!source || !source.text.includes(quote)) continue;
+        const start = source.text.indexOf(quote);
+        const sourceRef = { id: source.id, start, end: start + quote.length };
         const isFinalSubmission = source.id === (task === 'essay' ? 'revision' : 'science');
         if (dimension === 'effective' && !isFinalSubmission) continue;
 
@@ -125,7 +127,7 @@ export function validateEvidence(data: Assessment, raw: unknown): EvidenceFeedba
         if (dimension === 'responsible' && !verification) continue;
         if (verification && verification.kind !== 'ai_reliance' && !verification.claim) {
           accepted.push({
-            task, quote, source: source.source, sourceLabel: source.label, verification, outcome: 'insufficient',
+            task, quote, sourceRef, source: source.source, sourceLabel: source.label, verification, outcome: 'insufficient',
             reason: 'The record does not link this passage to a complete, checkable claim from the AI.',
             improvement: nextStep.responsible[task],
           });
@@ -134,7 +136,7 @@ export function validateEvidence(data: Assessment, raw: unknown): EvidenceFeedba
         if (verification?.kind === 'ai_reliance' &&
             (outcome !== 'missed' || !verification.claim || !isFinalSubmission)) {
           accepted.push({
-            task, quote, source: source.source, sourceLabel: source.label, verification, outcome: 'insufficient',
+            task, quote, sourceRef, source: source.source, sourceLabel: source.label, verification, outcome: 'insufficient',
             reason: outcome === 'missed'
               ? 'The record does not link a complete earlier AI claim to an error in the final submission.'
               : 'This passage records asking for or using an AI result. Your own source comparison is not shown.',
@@ -162,15 +164,15 @@ export function validateEvidence(data: Assessment, raw: unknown): EvidenceFeedba
           }
         }
         const passages = (firstDraftQuote ? [quote, firstDraftQuote] : [quote]).map(excerpt => ({
-          quote: excerpt,
+          task, quote: excerpt,
           text: excerpt.normalize('NFKC').trim().toLowerCase().replace(/\s+/g, ' '),
         }));
         if (passages.some(passage => used.some(entry =>
-          entry.text.includes(passage.text) || passage.text.includes(entry.text)
-          || sources.some(document => sharesPassage(document.text, entry.quote, passage.quote))))) continue;
+          entry.task === task && (entry.text.includes(passage.text) || passage.text.includes(entry.text)
+          || sources.some(document => document.task === task && sharesPassage(document.text, entry.quote, passage.quote)))))) continue;
         used.push(...passages);
         accepted.push({
-          task, quote, firstDraftQuote, source: source.source, sourceLabel: source.label,
+          task, quote, sourceRef, firstDraftQuote, source: source.source, sourceLabel: source.label,
           outcome, reason: itemReason, improvement: itemImprovement, ...(verification && { verification }),
         });
         if (isEssayComparison) break;
@@ -179,7 +181,7 @@ export function validateEvidence(data: Assessment, raw: unknown): EvidenceFeedba
     }
     evidence[dimension] = items;
   }
-  return { schema: evidenceVersion, evidence };
+  return { schema: evidenceVersion, scoringVersion, evidence };
 }
 
 function verifyAttribution(
@@ -266,8 +268,8 @@ function missingEvidence(task: Task, dimension: keyof typeof nextStep): Evidence
 }
 
 /**
- * Combine several independent assessor runs. For each dimension and task, a task level counts only
- * when at least two verified runs reach it. The rows of the first run with that level are kept and
+ * Combine separate model reviews, not independent observations of the student. A task level counts
+ * when at least two verified runs reach it and no other level also has two votes. Rows of the first matching run are kept and
  * the merged rows are verified again, so one student action still supports one process dimension.
  * With no agreement, the task has not enough evidence for that dimension.
  */
@@ -279,16 +281,33 @@ export function consensusEvidence(data: Assessment, raws: unknown[]): EvidenceFe
   if (runs.length === 1) return { ...runs[0].feedback, runs: { requested: raws.length, valid: 1 } };
 
   const merged = Object.fromEntries(rubricDimensions.map(dimension => [dimension, [] as unknown[]]));
+  const agreedLevels = new Map<string, ReturnType<typeof taskLevel>>();
   for (const dimension of rubricDimensions) {
     for (const task of tasks) {
       const levels = runs.map(run => taskLevel(dimension, run.feedback.evidence[dimension].filter(item => item.task === task)));
-      const agreed = levels.find(level => levels.filter(other => other === level).length >= 2);
-      if (!agreed) continue;
+      const supported = [...new Set(levels)].filter(level => levels.filter(other => other === level).length >= 2);
+      if (supported.length !== 1) continue;
+      const agreed = supported[0];
+      agreedLevels.set(dimension + ':' + task, agreed);
       const chosen = runs[levels.indexOf(agreed)];
       merged[dimension].push(...chosen.raw[dimension].filter(row => isRecord(row) && row.task === task));
     }
   }
-  return { ...validateEvidence(data, merged), runs: { requested: raws.length, valid: runs.length } };
+  const feedback = validateEvidence(data, merged);
+  for (const dimension of rubricDimensions) {
+    for (const task of tasks) {
+      const expected = agreedLevels.get(dimension + ':' + task);
+      const items = feedback.evidence[dimension].filter(item => item.task === task);
+      // Deduplication across dimensions can remove a negative item and accidentally promote Fair to Great.
+      if (expected !== undefined && taskLevel(dimension, items) !== expected) {
+        feedback.evidence[dimension] = feedback.evidence[dimension].map(item => item.task === task ? {
+          ...item, outcome: 'insufficient',
+          reason: 'After duplicate actions were excluded, the remaining evidence no longer supported the agreed task level.',
+        } : item);
+      }
+    }
+  }
+  return { ...feedback, runs: { requested: raws.length, valid: runs.length } };
 }
 
 /** Assessor runs per report: ASSESSOR_RUNS, from 1 to 5, default 3. */

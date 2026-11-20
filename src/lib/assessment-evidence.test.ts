@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { consensusEvidence, validateEvidence } from './assessment-evidence';
-import { combineLevels, evidenceStrength, provisionalScore, type Verification } from './assessment-scoring';
+import { combineLevels, evidenceStrength, provisionalScore, scoringVersion, evidenceVersion, type Verification } from './assessment-scoring';
 import { newAssessment } from './secondary';
 
 const draft = 'A dramatic discovery hides years of careful work.';
@@ -316,7 +316,7 @@ describe('provisional assessment scoring', () => {
     raw.effective = [item('essay', 'revision', draft, 'missed'), item('science', 'science', recommendation)];
     expect(provisionalScore(validateEvidence(data, raw)).results.effective).toMatchObject({
       tasks: { essay: 'Need Work', science: 'Great' }, level: 'Fair', range: ['Need Work', 'Great'], points: 60, mixed: true,
-      observations: 2, observedTasks: ['essay', 'science'], singleObservation: false,
+      verifiedEvidenceItems: 2, observedTasks: ['essay', 'science'], singleEvidenceItem: false,
       strength: { n: 2, successes: 1 },
     });
   });
@@ -324,10 +324,10 @@ describe('provisional assessment scoring', () => {
   it('flags a dimension whose level rests on one verified item without changing the score', () => {
     const score = provisionalScore(validateEvidence(data, results()));
     expect(score.results.responsible).toMatchObject({
-      level: 'Need Work', observations: 1, observedTasks: ['science'], singleObservation: true,
+      level: 'Need Work', verifiedEvidenceItems: 1, observedTasks: ['science'], singleEvidenceItem: true,
     });
-    expect(score.results.critical).toMatchObject({ level: 'Fair', singleObservation: true });
-    expect(score.results.effective.singleObservation).toBe(false);
+    expect(score.results.critical).toMatchObject({ level: 'Fair', singleEvidenceItem: true });
+    expect(score.results.effective.singleEvidenceItem).toBe(false);
     expect(score.total).toBe((100 + 60 + 20) / 3 + 5);
   });
 });
@@ -353,7 +353,7 @@ describe('evidenceStrength', () => {
     expect(one).toMatchObject({ n: 1, successes: 1, wide: true });
     expect(one.mean).toBeCloseTo(0.75);
     expect(one.interval[0]).toBeCloseTo(0.229, 3);
-    const two = evidenceStrength('effective', [scored('met'), scored('met')])!;
+    const two = evidenceStrength('effective', [scored('met'), { ...scored('met'), task: 'essay' }])!;
     expect(two.mean).toBeCloseTo(2.5 / 3);
     expect(two.interval[0]).toBeCloseTo(0.431, 3);
     expect(two.wide).toBe(false);
@@ -361,13 +361,81 @@ describe('evidenceStrength', () => {
 
   it('counts partial as half a success, including a Responsible check the student did not start', () => {
     const reminded: Verification = { kind: 'after_ai_reminder', material: 'station log', reminder: null, claim };
-    const strength = evidenceStrength('responsible', [scored('met', reminded), scored('missed'), scored('insufficient')])!;
+    const strength = evidenceStrength('responsible', [scored('met', reminded), { ...scored('missed'), task: 'essay' }, scored('insufficient')])!;
     expect(strength).toMatchObject({ n: 2, successes: 0.5 });
     expect(strength.mean).toBeCloseTo(1 / 3);
   });
 
   it('returns null without verified items', () => {
     expect(evidenceStrength('critical', [scored('insufficient')])).toBeNull();
+  });
+});
+
+
+describe('versioned results and evidence boundaries', () => {
+  it.each([
+    ['met', 'met', 100], ['missed', 'missed', 20], ['met', 'partial', 80],
+    ['partial', 'missed', 40], ['met', 'missed', 60], ['met', 'insufficient', 100],
+    ['insufficient', 'insufficient', null],
+  ] as const)('combines %s and %s across both core tasks', (essayOutcome, scienceOutcome, expected) => {
+    const raw = results();
+    raw.bonus = [gap('essay'), gap('science')];
+    raw.responsible = [gap('essay'), gap('science')];
+    raw.effective = [essayOutcome === 'insufficient' ? item('essay', '', '', 'insufficient') : item('essay', 'revision', draft, essayOutcome),
+      scienceOutcome === 'insufficient' ? item('science', '', '', 'insufficient') : item('science', 'science', recommendation, scienceOutcome)];
+    raw.critical = [essayOutcome === 'insufficient' ? gap('essay') : item('essay', 'revision', essay, essayOutcome, firstDraftQuote),
+      scienceOutcome === 'insufficient' ? gap('science') : item('science', 'science-chat-2', scienceDecision, scienceOutcome)];
+    const score = provisionalScore(validateEvidence(data, raw));
+    expect(score.results.effective.points).toBe(expected);
+    expect(score.results.critical.points).toBe(expected);
+    expect(score.total).toBe(expected);
+    expect(score.assessed).toBe(expected === null ? 0 : 2);
+  });
+
+  it('does not apply current rules to unversioned, old or future feedback', () => {
+    const current = validateEvidence(data, results());
+    expect(current).toMatchObject({ schema: evidenceVersion, scoringVersion });
+    for (const saved of [
+      { ...current, scoringVersion: undefined }, { ...current, schema: 1 as const },
+      { ...current, schema: 2 as const }, { ...current, scoringVersion: scoringVersion + 1 },
+    ]) expect(() => provisionalScore(saved)).toThrow('explicit re-assessment');
+  });
+
+  it('derives source references from the matched text and ignores model observation IDs', () => {
+    const raw = results();
+    Object.assign(raw.effective[0], { observationId: 'independent-999', sourceRef: { id: 'fake', start: 99, end: 999 } });
+    const feedback = validateEvidence(data, raw);
+    expect(feedback.evidence.effective[0].sourceRef).toEqual({ id: 'revision', start: 0, end: draft.length });
+    expect(feedback.evidence.effective[0]).not.toHaveProperty('observationId');
+  });
+
+  it('does not inflate the indicator with different quotations from the same decision', () => {
+    const raw = results();
+    const decision = 'I chose Bristol after comparing it with Heathrow. Steadiness was the reason for my choice.';
+    raw.effective.push(item('science', 'science', 'Steadiness was the reason for my choice.'));
+    raw.effective[1] = item('science', 'science', 'I chose Bristol after comparing it with Heathrow.');
+    const feedback = validateEvidence({ ...data, science: decision }, raw);
+    const result = provisionalScore(feedback).results.effective;
+    expect(result.verifiedEvidenceItems).toBe(3);
+    expect(result.strength).toMatchObject({ n: 2, successes: 2 });
+    expect(result.strength).toEqual(evidenceStrength('effective', [feedback.evidence.effective[0], feedback.evidence.effective[1]]));
+    expect(result.points).toBe(100);
+  });
+
+  it('rejects duplicate and overlapping quotes within a task without losing a different task', () => {
+    const raw = results();
+    raw.effective = [item('essay', 'revision', draft), item('essay', 'revision', draft),
+      item('essay', 'revision', 'discovery hides years'), item('science', 'science', draft)];
+    const result = provisionalScore(validateEvidence({ ...data, science: draft }, raw)).results.effective;
+    expect(result).toMatchObject({ verifiedEvidenceItems: 2, observedTasks: ['essay', 'science'], strength: { n: 2 }, points: 100 });
+  });
+
+  it('leaves strength and task points unchanged when an outcome is repeated', () => {
+    const feedback = validateEvidence(data, results());
+    const items = feedback.evidence.effective;
+    expect(evidenceStrength('effective', [...items, ...items])).toEqual(evidenceStrength('effective', items));
+    expect(provisionalScore({ ...feedback, evidence: { ...feedback.evidence, effective: [...items, ...items] } }).total)
+      .toBe(provisionalScore(feedback).total);
   });
 });
 
@@ -407,4 +475,28 @@ describe('consensusEvidence', () => {
     expect(level(merged, 'responsible', 'science')).toBe('Great');
     expect(merged.evidence.critical.find(entry => entry.task === 'science')).toMatchObject({ outcome: 'insufficient', quote: null });
   });
+});
+
+it('does not pick an order-dependent winner when two pairs of model reviews disagree', () => {
+  const great = results();
+  const missed = { ...results(), effective: [item('essay', 'revision', draft, 'missed'), item('science', 'science', recommendation)] };
+  const partial = { ...results(), effective: [item('essay', 'revision', draft, 'partial'), item('science', 'science', recommendation)] };
+  for (const runs of [[great, great, missed, missed, partial], [missed, missed, great, great, partial]]) {
+    expect(provisionalScore(consensusEvidence(data, runs)).results.effective.tasks.essay).toBe('Not enough evidence');
+  }
+});
+
+it('does not promote a consensus level when cross-dimension deduplication removes negative evidence', () => {
+  const otherCheck = 'I checked the station log separately and compared the calm days.';
+  const input = { ...data, comparison: [data.comparison[0], { ...data.comparison[1], text: data.comparison[1].text + '\n' + otherCheck }] };
+  const first = { ...results(), responsible: [gap('essay'), {
+    ...item('science', 'science-chat-2', otherCheck, 'missed'),
+    verification: { kind: 'student_initiated' as const, material: 'station log', reminder: null, claim },
+  }], critical: [gap('essay'), item('science', 'science-chat-2', scienceDecision), item('science', 'science-chat-2', check, 'missed')] };
+  const second = { ...results(), responsible: [gap('essay'), verified('met')], critical: [gap('essay'), item('science', 'science-chat-2', constraint)] };
+  const third = { ...results(), responsible: [gap('essay'), verified('met')], critical: [gap('essay'), item('science', 'science-chat-2', scienceDecision, 'partial')] };
+  expect(provisionalScore(validateEvidence(input, first)).results.critical.tasks.science).toBe('Fair');
+  const score = provisionalScore(consensusEvidence(input, [first, second, third]));
+  expect(score.results.responsible.tasks.science).toBe('Great');
+  expect(score.results.critical.tasks.science).toBe('Not enough evidence');
 });

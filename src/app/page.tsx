@@ -157,7 +157,7 @@ export default function Consent() {
             <details className="privacy-details">
               <summary>How is my data used?</summary>
               <div className="body">
-                <p>Your submitted work and chat are saved under your activity link.</p>
+                <p>Your submitted work and chat are saved. To reopen a new activity, use the same browser and activity link. Access lasts up to 30 days.</p>
                 <p>When you use the assistant and when feedback is generated, the app sends the relevant assignment materials, writing and conversation to the AI provider.</p>
               </div>
             </details>

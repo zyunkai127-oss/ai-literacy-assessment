@@ -32,6 +32,7 @@ function betaContinuedFraction(x: number, a: number, b: number): number {
 
 /** Regularised incomplete beta I_x(a, b): the Beta(a, b) cumulative distribution at x. */
 export function betaCdf(x: number, a: number, b: number): number {
+  if (!Number.isFinite(a) || !Number.isFinite(b) || a <= 0 || b <= 0 || Number.isNaN(x)) throw RangeError('Invalid Beta parameters');
   if (x <= 0) return 0;
   if (x >= 1) return 1;
   const front = Math.exp(logGamma(a + b) - logGamma(a) - logGamma(b) + a * Math.log(x) + b * Math.log(1 - x));
@@ -40,8 +41,10 @@ export function betaCdf(x: number, a: number, b: number): number {
     : 1 - front * betaContinuedFraction(1 - x, b, a) / b;
 }
 
-/** Quantile of Beta(a, b) by bisection. The CDF is monotone, so 60 halvings give about 1e-18 precision. */
+/** Quantile by 60 bisections, limited by floating-point and CDF accuracy. */
 export function betaQuantile(p: number, a: number, b: number): number {
+  if (!Number.isFinite(p) || p < 0 || p > 1 || !Number.isFinite(a) || !Number.isFinite(b) || a <= 0 || b <= 0) throw RangeError('Invalid Beta parameters');
+  if (p === 0 || p === 1) return p;
   let low = 0, high = 1;
   for (let i = 0; i < 60; i++) {
     const mid = (low + high) / 2;

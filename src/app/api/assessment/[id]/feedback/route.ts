@@ -1,8 +1,9 @@
+import { assessmentAccess } from '../../../../../lib/assessment-access';
 import { json, fail } from '../../../../../lib/api';
 import { readAssessment, updateAssessment } from '../../../../../lib/store';
 import { chatModelId, streamReply } from '../../../../../lib/llm';
 import { essayPrompt, essayQuestion, type Assessment } from '../../../../../lib/secondary';
-import { criteria, evidenceVersion, type EvidenceFeedback } from '../../../../../lib/assessment-scoring';
+import { criteria, hasCurrentScoring, type EvidenceFeedback } from '../../../../../lib/assessment-scoring';
 import { assessorRuns, consensusEvidence, evidenceFormat, evidenceSources } from '../../../../../lib/assessment-evidence';
 import { assessorPersona } from '../../../../../lib/assessment-personas';
 import { scienceMaterials, scienceReferenceFacts } from '../../../../../lib/science-materials';
@@ -67,9 +68,11 @@ Humanities assignment:\n${essayPrompt}\n${essayQuestion}\nScience assignment and
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   const regenerate = (await req.json().catch(() => null))?.regenerate === true;
-  const data = readAssessment(id);
-  if (!data || data.stage !== 'feedback') return fail(409, 'Finish both tasks first.');
-  if (data.feedback?.schema === evidenceVersion) return json(data.feedback);
+  const access = assessmentAccess(req);
+  const data = readAssessment(id, access);
+  if (!data) return fail(404, 'Activity not found.');
+  if (data.stage !== 'feedback') return fail(409, 'Finish both tasks first.');
+  if (data.feedback && hasCurrentScoring(data.feedback)) return json(data.feedback);
   if (!regenerate) {
     if (data.feedback) return json(data.feedback);
     if (data.ratings) return fail(409, 'Open the saved report to review it or request new feedback.');
@@ -82,7 +85,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   try {
     const feedback = await request;
     if (updateAssessment(id, { ...data, feedback })) return json(feedback);
-    const saved = readAssessment(id)?.feedback;
+    const saved = readAssessment(id, access)?.feedback;
     return saved ? json(saved) : fail(409, 'Your activity changed. Refresh to continue.');
   } catch {
     return fail(503, 'Feedback is temporarily unavailable.');
