@@ -104,7 +104,8 @@ export function validateEvidence(data: Assessment, raw: unknown): EvidenceFeedba
       const accepted: EvidenceItem[] = [];
       let gap: EvidenceItem | undefined;
       for (const row of candidates) {
-        if (accepted.length === maxAccepted) break;
+        // Only scored items fill a slot. Items downgraded to insufficient stay as notes and never block a later valid one.
+        if (accepted.filter(entry => entry.outcome !== 'insufficient').length === maxAccepted) break;
         const { outcome, reason, improvement } = row;
         const quote = row.quote === '' ? null : row.quote;
         const sourceId = row.sourceId === '' ? null : row.sourceId;

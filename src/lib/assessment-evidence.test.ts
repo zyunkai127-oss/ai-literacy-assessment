@@ -71,6 +71,17 @@ describe('provisional assessment scoring', () => {
     expect(provisionalScore(feedback)).toMatchObject({ assessed: 1, total: null });
   });
 
+  it('does not let items downgraded to insufficient block a later verified check', () => {
+    const reliance = (quote: string) => ({
+      ...item('science', 'science-chat-2', quote),
+      verification: { kind: 'ai_reliance', material: '', reminder: null, claim } as Verification,
+    });
+    const raw = { ...results(), responsible: [gap('essay'), reliance(constraint), reliance(scienceDecision), verified('met')] };
+    const science = validateEvidence(data, raw).evidence.responsible.filter(entry => entry.task === 'science');
+    expect(science.map(entry => entry.outcome)).toEqual(['insufficient', 'insufficient', 'met']);
+    expect(science[2]).toMatchObject({ quote: check });
+  });
+
   it('keeps a valid candidate listed after rejected ones and stops at two verified items', () => {
     const raw = results();
     raw.bonus = [
