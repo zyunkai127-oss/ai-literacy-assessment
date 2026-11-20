@@ -15,6 +15,7 @@ export default function AssessmentPage({ params }: { params: Promise<{id:string}
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [chatError, setChatError] = useState('');
   const key = (stage: string) => 'edux:' + id + ':' + stage;
   useEffect(() => {
     let live = true;
@@ -30,7 +31,9 @@ export default function AssessmentPage({ params }: { params: Promise<{id:string}
   }, [id, url]);
   async function send(action: 'chat' | 'submit') {
     if (!data || busy) return;
-    setBusy(action); setError('');
+    setBusy(action);
+    const showError = action === 'chat' ? setChatError : setError;
+    showError('');
     try {
       const res = await fetch(url, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({version:data.version,action,text:action === 'chat' ? message : work,work})});
       const next = await res.json();
@@ -38,10 +41,12 @@ export default function AssessmentPage({ params }: { params: Promise<{id:string}
       if (action === 'submit') {
         sessionStorage.removeItem(key(data.stage));
         setWork(next.stage === 'revision' ? next.draft : '');
-        window.scrollTo(0,0);
+        setChatError('');
+        window.scrollTo({ top: 0, behavior: 'instant' });
       }
-      setData(next); setMessage('');
-    } catch(e) { setError(e instanceof Error ? e.message : 'Please try again.'); }
+      setData(next);
+      setMessage('');
+    } catch(e) { showError(e instanceof Error ? e.message : 'Please try again.'); }
     finally { setBusy(''); }
   }
   if (!data) return <main className="wrap"><p role="status">{error || 'Loading your activity…'}</p></main>;
@@ -50,7 +55,7 @@ export default function AssessmentPage({ params }: { params: Promise<{id:string}
   const done = data.stage === 'feedback';
   const chat = science ? data.comparison : data.discussion;
   const completedSteps = { draft: 0, revision: 1, science: 2, feedback: 3 }[data.stage];
-  return <main className={done ? "wrap session-report" : "secondary"}>
+  return <main className={done ? 'wrap session-report assessment-results' : revision ? 'secondary secondary--revision' : 'secondary'}>
     <header className={done ? "intro-header" : undefined}><Brand/><span>{done ? 'Assessment complete' : science ? 'Task 2 of 2 · Science' : 'Task 1 of 2 · Humanities'}</span></header>
     {!done && <div className="assessment-progress" role="progressbar" aria-label="Assessment progress"
       aria-valuemin={0} aria-valuemax={3} aria-valuenow={completedSteps}>
@@ -59,25 +64,33 @@ export default function AssessmentPage({ params }: { params: Promise<{id:string}
     {done ? <p className="report-kicker">Session feedback</p> : null}
     <h1>{done ? 'Your feedback' : science ? 'Choosing a Wind Farm Site' : 'Dramatic Moments'}</h1>
     {done ? <>
-      <Factors url={url} saved={data.ratings}/>
-      <details className="card"><summary>Your work and discussions</summary>
+      <Factors url={url} saved={data.feedback} legacy={data.ratings}/>
+      <details className="card report-work"><summary>Your work and discussions</summary>
       {[{title:'Dramatic Moments',answer:data.revision,history:data.discussion},{title:'Choosing a Wind Farm Site',answer:data.science,history:data.comparison}].map((task,i)=><section className="panel" key={task.title}>
         <h2>{task.title}</h2><p>{i === 0 ? 'Compare your first and final arguments. Which idea did you keep or change after discussion?' : 'Compare your recommendation with the source materials. Which feature of the other site most influenced your choice?'}</p>
         <details open><summary>Your submission</summary><p>{task.answer}</p></details>
         {i===0 && <details><summary>Your independent draft</summary><p>{data.draft}</p></details>}
         {i===1 && <details><summary>Science evidence</summary>{data.windPack ? <EvidencePack/> : <Graphs/>}</details>}
         <details><summary>Your discussion ({task.history.length} messages)</summary>{task.history.length ? <Transcript messages={task.history}/> : <p>You submitted this task without a chat exchange.</p>}</details>
-      </section>)}</details></> : <>
-      <section className="panel">{science ? <><p>{data.windPack ? pack.question : windQuestion}</p>{data.windPack ? <EvidencePack/> : <Graphs/>}</> : <><p>{essayPrompt}</p><strong>{essayQuestion}</strong></>}</section>
-      <div className="workspace"><section className="panel">
+      </section>)}</details>
+      <nav className="assessment-actions" aria-label="Assessment actions">
+        <a className="button test-again" href="/#before-you-start">Test Again</a>
+        <a className="button" href="/">Finish</a>
+      </nav>
+    </> : <>
+      <section className="panel prompt-panel">{science ? <><p>{data.windPack ? pack.question : windQuestion}</p>{data.windPack ? <EvidencePack/> : <Graphs/>}</> : <><p>{essayPrompt}</p><strong>{essayQuestion}</strong></>}</section>
+      <div className={revision ? "workspace revision-workspace" : "workspace"}><section className="panel">
         <h2>{science ? 'Your recommendation' : revision ? 'Revise your essay' : 'Your independent first draft'}</h2>
-        {revision && <details><summary>Read your first draft</summary><p>{data.draft}</p></details>}
+        {revision && <>
+          <details className="original-draft"><summary>Read your original draft</summary><p tabIndex={0}>{data.draft}</p></details>
+          <a className="revision-chat-link" href="#ai-discussion">Go to AI discussion</a>
+        </>}
         <label htmlFor="work">{science ? 'Write your choice and supporting evidence.' : revision ? 'Keep or change your argument after discussing it.' : 'Write your response. AI discussion opens after you submit this draft.'}</label>
-        <textarea id="work" maxLength={12000} value={work} disabled={!!busy} onChange={e=>{setWork(e.target.value);sessionStorage.setItem(key(data.stage),e.target.value);}}/>
+        <textarea id="work" maxLength={12000} value={work} disabled={busy === 'submit'} onChange={e=>{setWork(e.target.value);sessionStorage.setItem(key(data.stage),e.target.value);}}/>
         <button className="primary" disabled={!!busy || !work.trim()} onClick={()=>send('submit')}>{busy==='submit' ? 'Saving…' : science ? 'Submit and view feedback' : revision ? 'Submit essay and start science' : 'Submit draft and open discussion'}</button>
-      </section>{(revision || science) && <Chat model={data.chatModel} messages={chat} value={message} change={setMessage} busy={busy} send={()=>send('chat')}/>}</div>
+        {error && <p role="alert" className="error">{error}</p>}
+      </section>{(revision || science) && <Chat model={data.chatModel} messages={chat} value={message} change={setMessage} busy={busy} error={chatError} send={()=>send('chat')}/>}</div>
     </>}
-    {error && <p role="alert" className="error">{error}</p>}
   </main>;
 }
 function Graphs() {

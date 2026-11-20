@@ -1,102 +1,80 @@
-import { json, fail } from '@/lib/api';
-import { readAssessment, updateAssessment } from '@/lib/store';
-import { chatModelId, streamReply } from '@/lib/llm';
-import { dimensions, essayPrompt, essayQuestion, hasTaskFeedback, type Assessment, type Ratings } from '@/lib/secondary';
-import { assessorPersona } from '@/lib/assessment-personas';
-import { scienceMaterials } from '@/lib/science-materials';
+import { json, fail } from '../../../../../lib/api';
+import { readAssessment, updateAssessment } from '../../../../../lib/store';
+import { chatModelId, streamReply } from '../../../../../lib/llm';
+import { essayPrompt, essayQuestion, type Assessment } from '../../../../../lib/secondary';
+import { criteria, evidenceVersion, type EvidenceFeedback } from '../../../../../lib/assessment-scoring';
+import { evidenceFormat, evidenceSources, validateEvidence } from '../../../../../lib/assessment-evidence';
+import { assessorPersona } from '../../../../../lib/assessment-personas';
+import { scienceMaterials, scienceReferenceFacts } from '../../../../../lib/science-materials';
 
-const pending = new Map<string, Promise<Ratings>>();
-async function rate(data: Assessment): Promise<Ratings> {
+const pending = new Map<string, Promise<EvidenceFeedback>>();
+
+async function rate(data: Assessment): Promise<EvidenceFeedback> {
   const sources = await scienceMaterials(data.windPack);
+  const facts = scienceReferenceFacts(data.windPack);
   const prompt = `${assessorPersona}
 
-OUTPUT
-Return only JSON keyed effective, critical, responsible, bonus. Each row has level, comment (one sentence of at most 10 words), next (one practical student-facing action) and tasks: {essay:{detail,quote},science:{detail,quote}}.
-Evaluate each task before assigning a level across the session. Each task has a brief explanation and an exact contiguous excerpt of the student's own writing that supports it. When a task shows no relevant evidence, explain the gap and use an empty quote. Missing opportunity in one task does not cancel demonstrated skill in the other.
-For critical.tasks.essay, focus on one decision. If the student explicitly asked the AI to challenge a particular claim, check that claim first. To assess a revision, include draftQuote from the independent draft and revisionQuote from the revised essay, about the same idea. Compare both quotes before you say the student kept, qualified or replaced it. Keep the subject and scope of each claim as written, even when the assistant interpreted it differently. Explain that one change alone. When comparing versions, use this exact shape for critical.tasks.essay: {"detail":"What changed and why it matters","quote":"Exact revised excerpt","draftQuote":"Exact original excerpt","revisionQuote":"Exact revised excerpt"}. Do not quote a short excerpt as proof that the rest of the essay kept an idea. If your evidence is only from the discussion, leave both version fields empty, quote a student message and keep the explanation about what they said in the discussion.
+Return the rubric results in the supplied schema. For each dimension return one flat array with one or two items per task. Keep reason and improvement concrete and student-facing, one short sentence each. Improvement gives an action the student can take. Use an empty firstDraftQuote unless citing a paired Humanities revision. Do not assign points, deductions, percentages or ratings.
+Use this rubric: ${JSON.stringify(criteria)}.
 
-RUBRIC
-Effective: Great for well-supported work, Fair for an incomplete comparison or reason, Need Work for missing conclusions or contradictory evidence. The science question asks for comparison with one alternative.
-Critical: Great for a reasoned decision to accept, qualify or reject AI advice, Fair for recognising a disagreement with vague reasons, Need Work for adopting advice that contradicts evidence the student identified.
-Responsible: Great for a specific check against the source and accurate use or correction, Fair for a partial check, Need Work for submitting a demonstrably false AI claim. An assistant's check alone isn't a student's check.
-Bonus: Great for concrete evidence of deliberate management of AI context or clarification of requirements. Otherwise use Not enough evidence.
+Effective: judge only the final submission. In Science, assess one alternative site and the interpretation of measurements. In the windmill field notebook task, use a second Effective observation when the student makes a distinct claim about voltage and power or energy. Addressing power or energy is optional if the assignment is otherwise met. Endorsing an inference about power or energy from voltage alone is missed. Acknowledging that the voltage readings cannot establish power or energy is accurate. Quote enough of the student's statement to establish which position they endorse.
 
-Humanities assignment
-${essayPrompt}
-${essayQuestion}
+Critical in Humanities: focus on one decision. If the student asked the AI to challenge a specific claim and both drafts address it, follow that same claim across the drafts before considering other ideas. When describing a revision, use sourceId "revision", quote the revised passage in quote, and give firstDraftQuote with the exact earlier passage about the same idea. Choose the passages where the same claim is stated most directly in each version. Compare those exact words before explaining what happened to that claim. If the final version keeps the earlier explanation but adds another reason or limits its scope, call it qualified. Use replaced only if the original claim no longer appears in the final version. When citing a chat message, describe only what the student said during the discussion.
 
-Science assignment and sources
-${sources.join('\n')}`;
-  const {draft,revision,science,discussion,comparison} = data;
+Responsible: use verification.kind none for a gap with no student quote. Use an empty material when unused. Use reminder {message:0,quote:""} unless there is a specific earlier reminder. In claim, give the earlier assistant message number and copy one complete sentence, bullet statement or table row verbatim. Include the specific fact, measurement or comparison the student checked, corrected or repeated, together with the entity or condition it describes. A source title, topic, unrelated claim or isolated number is insufficient. Leave claim {message:0,quote:""} when no matching complete statement exists. For a demonstrated personal check choose student_initiated, after_ai_reminder, or unclear_initiator. Look first for a statement in the submission about what the student personally checked. Quote that statement verbatim, including the source name, and use only the exact source name as material. When the response also uses figures supplied by the AI, document that separately as ai_reliance. Name what the check confirmed or corrected in the reason. For after_ai_reminder, supply the earlier assistant message number and its exact reminder quote in reminder. For other kinds leave the reminder empty. When the student uses AI's figures or asks AI to do the check, choose ai_reliance with empty material and reminder. Use insufficient unless the final submission adopts the same false AI claim and the task evidence shows it is false. In that case use missed, cite the final submission as the student source, cite the complete earlier AI claim, and explain the contradiction. Merely quoting a correct result does not establish that the student verified it.
+
+Bonus uses only met or insufficient. Mere activity, silence or writing fluency is not evidence. Copy a distinctive, exact contiguous excerpt (at most 500 characters) from the matching task in studentSources and give its exact sourceId. Reserve actions showing a source check or a specific draft change for the matching process criterion. Evaluate Effective independently from those actions, using the final submission even if the same passage was used to illustrate a change. For a gap with no quote use empty quote and sourceId.
+Humanities assignment:\n${essayPrompt}\n${essayQuestion}\nScience assignment and sources:\n${sources.join('\n')}${facts.length ? `\nREFERENCE FACTS (computed by the server from the science materials; use them to judge whether claims by the AI or the student are accurate; the student and the AI collaborator did not see this section):\n${facts.join('\n')}` : ''}`;
+  const { discussion, comparison } = data;
+  const numbered = (messages: Assessment['discussion']) => messages.map((message, index) => ({
+    ...message, message: index + 1,
+  }));
   const transcript = JSON.stringify({
-    humanities: { independentDraft: draft, revisedDraft: revision, discussion },
-    science: { recommendation: science, discussion: comparison },
+    studentSources: evidenceSources(data),
+    discussion: numbered(discussion),
+    comparison: numbered(comparison),
   });
-  const response = streamReply([{role:'user',ts:Date.now(),text:transcript}], prompt, { thinking: chatModelId() === 'claude-haiku-5-5' ? 'low' : undefined });
+  const response = streamReply([{ role: 'user', ts: Date.now(), text: transcript }], prompt, {
+    thinking: chatModelId() === 'claude-haiku-5-5' ? 'low' : undefined,
+    format: evidenceFormat,
+  });
   let part = await response.next(), raw = '';
   while (!part.done) { raw += part.value; part = await response.next(); }
   if (part.value.error) {
-    console.warn('Assessment feedback model call failed', part.value.error);
-    throw Error(part.value.error);
+    console.warn('Assessment feedback provider call failed.');
+    throw Error('Feedback unavailable');
   }
-  const result = JSON.parse(raw.trim().replace(/^\x60\x60\x60(?:json)?\s*/i,'').replace(/\s*\x60\x60\x60$/,''));
-  const essayMessages = discussion.filter(m => m.role === 'user').map(m => m.text);
-  const words = {
-    essay: [draft, revision, ...essayMessages],
-    science: [science,...comparison.filter(m=>m.role==='user').map(m=>m.text)]
-  };
-  for (const key of Object.keys(dimensions)) {
-    const row = result[key];
-    const allowed = key === 'bonus' ? ['Great','Not enough evidence'] : ['Great','Fair','Need Work','Not enough evidence'];
-    if (!row || !allowed.includes(row.level) || typeof row.comment !== 'string' ||
-      typeof row.next !== 'string' || !row.next.trim()) throw Error('Incomplete feedback');
-    let evidenceMismatch = false;
-    for (const task of ['essay','science'] as const) {
-      const item = row.tasks?.[task];
-      if (!item || typeof item.detail !== 'string' || !item.detail.trim() || typeof item.quote !== 'string') throw Error('Missing task evidence');
-      item.quote = item.quote.trim();
-
-      if (key === 'critical' && task === 'essay') {
-        const before = typeof item.draftQuote === 'string' ? item.draftQuote.trim() : '';
-        const after = typeof item.revisionQuote === 'string' ? item.revisionQuote.trim() : '';
-        if (before || after) {
-          if (before && after && draft.includes(before) && revision.includes(after)) {
-            item.draftQuote = before;
-            item.revisionQuote = after;
-            item.quote = after;
-            continue;
-          }
-        } else if (item.quote && essayMessages.some(message => message.includes(item.quote))) {
-          item.detail = 'This student message was recorded during the discussion. We could not verify a comparison between the two drafts for this judgement.';
-          evidenceMismatch = true;
-          continue;
-        }
-      } else if (!item.quote || words[task].some(text => text.includes(item.quote))) {
-        continue;
-      }
-
-      row.tasks[task] = {detail:'We could not verify a supporting passage in this task.',quote:''};
-      evidenceMismatch = true;
-    }
-    if (!row.tasks.essay.quote && !row.tasks.science.quote) row.level = 'Not enough evidence';
-    if (row.level === 'Not enough evidence') row.comment = 'More evidence is needed for this skill.';
-    else if (evidenceMismatch || !row.comment.trim() || row.comment.trim().split(/\s+/).length > 10) {
-      row.comment = {Great:'Your work demonstrates this skill.',Fair:'Your work partly demonstrates this skill.','Need Work':'This skill needs more practice.'}[row.level as 'Great'|'Fair'|'Need Work'];
-    }
-  }
-  return result;
-}
-export async function POST(_: Request, ctx: {params: Promise<{id:string}>}) {
-  const {id} = await ctx.params;
-  const data = readAssessment(id);
-  if (!data || data.stage !== 'feedback') return fail(409,'Finish both tasks first.');
-  if (hasTaskFeedback(data.ratings)) return json(data.ratings);
-  let request = pending.get(id);
-  if (!request) { request = rate(data); pending.set(id,request); }
   try {
-    data.ratings = await request;
-    if (!updateAssessment(id,data)) return json(readAssessment(id)?.ratings ?? data.ratings);
-    return json(data.ratings);
-  } catch { return fail(503,'Feedback is temporarily unavailable.'); }
-  finally { if (pending.get(id) === request) pending.delete(id); }
+    return validateEvidence(data, JSON.parse(raw));
+  } catch (error) {
+    console.warn('Assessment feedback did not match the expected format.');
+    throw error;
+  }
+}
+
+export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const { id } = await ctx.params;
+  const regenerate = (await req.json().catch(() => null))?.regenerate === true;
+  const data = readAssessment(id);
+  if (!data || data.stage !== 'feedback') return fail(409, 'Finish both tasks first.');
+  if (data.feedback?.schema === evidenceVersion) return json(data.feedback);
+  if (!regenerate) {
+    if (data.feedback) return json(data.feedback);
+    if (data.ratings) return fail(409, 'Open the saved report to review it or request new feedback.');
+  }
+  let request = pending.get(id);
+  if (!request) {
+    request = rate(data);
+    pending.set(id, request);
+  }
+  try {
+    const feedback = await request;
+    if (updateAssessment(id, { ...data, feedback })) return json(feedback);
+    const saved = readAssessment(id)?.feedback;
+    return saved ? json(saved) : fail(409, 'Your activity changed. Refresh to continue.');
+  } catch {
+    return fail(503, 'Feedback is temporarily unavailable.');
+  } finally {
+    if (pending.get(id) === request) pending.delete(id);
+  }
 }
