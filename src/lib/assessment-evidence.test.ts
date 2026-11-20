@@ -23,7 +23,7 @@ const data = {
   ],
 };
 
-const claim = { message: 1, quote: 'station log' };
+const claim = { message: 1, quote: 'Bristol had 9 readings below five knots in the station log.' };
 const gap = (task: string) => ({ task, sourceId: null, quote: null, outcome: 'insufficient', reason: 'No example was observed.', improvement: 'Explain your decision.', verification: null });
 const item = (task: string, sourceId: string, quote: string, outcome = 'met', firstDraftQuote?: string) =>
   ({ task, sourceId, quote, outcome, firstDraftQuote, reason: 'This explains your reasoning.', improvement: 'Name one source.', verification: null as Verification | null, inventedPoints: 99 });
@@ -71,13 +71,13 @@ describe('provisional assessment scoring', () => {
     expect(provisionalScore(feedback)).toMatchObject({ assessed: 1, total: null });
   });
 
-  it('uses overlapping essay passages once, with priority for the draft comparison', () => {
+  it('evaluates the final essay independently of the draft comparison', () => {
     const raw = results();
     raw.effective[0] = item('essay', 'revision', 'A dramatic discovery hides years');
     raw.critical[0] = item('essay', 'revision', essay, 'met', 'discovery hides years of careful work.');
     const feedback = validateEvidence(data, raw);
     expect(feedback.evidence.critical[0]).toMatchObject({ firstDraftQuote: 'discovery hides years of careful work.' });
-    expect(feedback.evidence.effective[0]).toMatchObject({ task: 'essay', outcome: 'insufficient' });
+    expect(feedback.evidence.effective[0]).toMatchObject({ task: 'essay', outcome: 'met' });
   });
 
   it('verifies both drafts, counts the pair once and rejects reuse of either passage', () => {
@@ -177,7 +177,7 @@ describe('provisional assessment scoring', () => {
   it('requires a real earlier assistant reminder for prompted verification', () => {
     const reminder = 'Check this reading in the station log yourself.';
     const comparison = [
-      { role: 'assistant' as const, text: reminder, ts: 0 },
+      { role: 'assistant' as const, text: claim.quote + '\n' + reminder, ts: 0 },
       { role: 'user' as const, text: check, ts: 1 },
     ];
     const prompted = {
@@ -232,6 +232,43 @@ describe('provisional assessment scoring', () => {
     const feedback = validateEvidence(data, raw);
     expect(feedback.evidence.responsible[1]).toMatchObject({ outcome: 'insufficient' });
     expect(provisionalScore(feedback).levels.responsible).toBe('Not enough evidence');
+  });
+
+  it('requires an earlier complete AI claim and adoption in the final work to penalise reliance', () => {
+    const falseClaim = 'No Bristol readings fell below 5 knots.';
+    const endorsement = 'The station records show that Bristol never fell below 5 knots.';
+    const comparison = [
+      { role: 'assistant' as const, text: falseClaim, ts: 0 },
+      { role: 'user' as const, text: endorsement, ts: 1 },
+    ];
+    const reliance = {
+      ...item('science', 'science', endorsement, 'missed'),
+      verification: { kind: 'ai_reliance', material: null, reminder: null, claim: { message: 1, quote: falseClaim } },
+    };
+    const raw = { ...results(), responsible: [gap('essay'), reliance] };
+    const contested = { ...data, science: endorsement, comparison };
+    expect(provisionalScore(validateEvidence({ ...contested, comparison: [] }, raw)).levels.responsible).toBe('Not enough evidence');
+    expect(provisionalScore(validateEvidence(contested, {
+      ...raw, responsible: [gap('essay'), { ...reliance, sourceId: 'science-chat-2' }],
+    })).levels.responsible).toBe('Not enough evidence');
+    const assessed = validateEvidence(contested, raw);
+    expect(assessed.evidence.responsible[1].verification?.claim).toEqual({ message: 1, quote: falseClaim });
+    expect(provisionalScore(assessed).levels.responsible).toBe('Need Work');
+  });
+
+  it('requires a full quoted statement instead of a fragment from an unrelated claim', () => {
+    const raw = { ...results(), responsible: [gap('essay'), verified('met')] };
+    const fragment = { message: 1, quote: 'The station log' };
+    raw.responsible[1].verification = { kind: 'student_initiated', material: 'station log', reminder: null, claim: fragment };
+    const comparison = [
+      { role: 'assistant' as const, text: 'The station log includes an Edinburgh station.', ts: 0 },
+      data.comparison[1],
+    ];
+    expect(provisionalScore(validateEvidence({ ...data, comparison }, raw)).levels.responsible).toBe('Not enough evidence');
+
+    raw.responsible[1].verification.claim = claim;
+    comparison[0].text = '- ' + claim.quote + '\n- Heathrow had 41 readings below five knots.';
+    expect(provisionalScore(validateEvidence({ ...data, comparison }, raw)).levels.responsible).toBe('Great');
   });
 
   it('counts a source check for Responsible before Critical', () => {

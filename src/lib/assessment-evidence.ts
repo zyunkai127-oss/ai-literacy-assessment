@@ -83,12 +83,14 @@ function isText(value: unknown, max: number): value is string {
 export function validateEvidence(data: Assessment, raw: unknown): EvidenceFeedback {
   if (!isRecord(raw)) throw Error('Invalid rubric results');
   const sources = evidenceSources(data);
-  const used: { text: string; quote: string }[] = [];
+  const usedActions: { text: string; quote: string }[] = [];
+  const usedFinalWork: typeof usedActions = [];
   const evidence = {} as EvidenceFeedback['evidence'];
   // A source check counts for Responsible first, so Critical needs a different decision.
-  // Both take priority over general writing-quality evidence.
+  // Effective assesses the final work independently from the student's actions.
   for (const dimension of ['responsible', 'critical', 'effective', 'bonus'] as const) {
     const rows = raw[dimension];
+    const used = dimension === 'effective' ? usedFinalWork : usedActions;
     if (!Array.isArray(rows)) throw Error('Invalid dimension results');
     const items: EvidenceItem[] = [];
     for (const task of tasks) {
@@ -109,22 +111,26 @@ export function validateEvidence(data: Assessment, raw: unknown): EvidenceFeedba
         if (!isText(quote, 500)) continue;
         const source = sources.find(entry => entry.id === sourceId && entry.task === task);
         if (!source || !source.text.includes(quote)) continue;
-        if (dimension === 'effective' && source.id !== (task === 'essay' ? 'revision' : 'science')) continue;
+        const isFinalSubmission = source.id === (task === 'essay' ? 'revision' : 'science');
+        if (dimension === 'effective' && !isFinalSubmission) continue;
 
         const verification = dimension === 'responsible' ? verifyAttribution(data, source, quote, row.verification) : undefined;
         if (dimension === 'responsible' && !verification) continue;
         if (verification && verification.kind !== 'ai_reliance' && !verification.claim) {
           accepted.push({
             task, quote, source: source.source, sourceLabel: source.label, verification, outcome: 'insufficient',
-            reason: 'This passage is not linked to a checkable claim the AI made earlier, so there was no AI claim to verify.',
+            reason: 'The record does not link this passage to a complete, checkable claim from the AI.',
             improvement: nextStep.responsible[task],
           });
           continue;
         }
-        if (verification?.kind === 'ai_reliance' && outcome !== 'missed') {
+        if (verification?.kind === 'ai_reliance' &&
+            (outcome !== 'missed' || !verification.claim || !isFinalSubmission)) {
           accepted.push({
             task, quote, source: source.source, sourceLabel: source.label, verification, outcome: 'insufficient',
-            reason: 'This passage records asking for or using an AI result. Your own source comparison is not shown.',
+            reason: outcome === 'missed'
+              ? 'The record does not link a complete earlier AI claim to an error in the final submission.'
+              : 'This passage records asking for or using an AI result. Your own source comparison is not shown.',
             improvement: nextStep.responsible[task],
           });
           continue;
@@ -175,8 +181,8 @@ function verifyAttribution(
   if (!isRecord(value)) return;
   const kind = verificationKinds.find(option => option === value.kind);
   if (!kind) return;
-  if (kind === 'ai_reliance') return { kind, material: null, reminder: null, claim: null };
   const claim = verifyClaim(data, source, value.claim);
+  if (kind === 'ai_reliance') return { kind, material: null, reminder: null, claim };
 
   if (!isText(value.material, 120)) return;
   const material = materialInQuote(quote, value.material, source.task === 'science' && data.windPack === 2);
@@ -196,13 +202,24 @@ function verifyAttribution(
   return { kind: 'unclear_initiator', material, reminder: null, claim };
 }
 
-/** An assistant message, before the cited student passage, that contains the quoted claim. */
+const sentences = new Intl.Segmenter('en', { granularity: 'sentence' });
+
+function quotesCompleteStatement(text: string, quote: string) {
+  return text.split(/\r?\n/).some(line => {
+    const statement = line.trim().replace(/^(?:[-+*]|\d+[.)])\s+/, '');
+    if (!statement.includes(quote) || statement.startsWith('#')) return false;
+    if (statement === quote) return true;
+    return Array.from(sentences.segment(statement)).some(({ segment }) => segment.trim() === quote);
+  });
+}
+
+/** Match a complete line or sentence from an earlier assistant message. */
 function verifyClaim(data: Assessment, source: ReturnType<typeof evidenceSources>[number], value: unknown) {
   if (!isRecord(value) || typeof value.message !== 'number' || !Number.isInteger(value.message) ||
       value.message < 1 || !isText(value.quote, 500) || source.id === 'draft') return null;
   if ('messageNumber' in source && value.message >= source.messageNumber) return null;
   const message = (source.task === 'essay' ? data.discussion : data.comparison)[value.message - 1];
-  return message?.role === 'assistant' && !message.blocked && message.text.includes(value.quote)
+  return message?.role === 'assistant' && !message.blocked && quotesCompleteStatement(message.text, value.quote)
     ? { message: value.message, quote: value.quote } : null;
 }
 

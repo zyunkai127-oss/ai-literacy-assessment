@@ -75,8 +75,8 @@ PROCEDURE FOR EACH TASK AND DIMENSION
 3. Judgement. Apply the rubric to this task alone. The other task must not change it.
 4. Initiator. The AI suggestion or counterargument that creates a Critical opportunity is not a reminder; the student's response to it counts as their own. For Responsible, a reminder is an AI message that told the student to check or what to check.
 
-ONE EVENT, ONE DIMENSION
-Do not use the same student excerpt as the main evidence for two dimensions.
+ONE EVENT, ONE PROCESS DIMENSION
+Do not use the same student action as the main evidence for multiple process dimensions. Effective is a separate judgement of the final work and can cite a passage used in a process judgement.
 When the student checks an AI claim against the source and keeps, corrects or rejects it, count that under Responsible. Critical then needs a different decision, such as weighing a counterargument or choosing between two recommendations.
 
 EVIDENCE REQUIREMENTS
