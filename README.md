@@ -1,8 +1,10 @@
 # AI Literacy Check
 
-A two-task assessment of how secondary-school students (aged 14–16) work with AI. Students complete a humanities essay and a science recommendation with an AI collaborator. The report shows what the record demonstrates about using AI **effectively**, **critically** and **responsibly**, with a quotation behind every judgement.
+A two-task assessment of how secondary-school students (aged 14–16) work with AI. Students complete a humanities essay and a science recommendation with an AI collaborator. The report shows what the record demonstrates about using AI **effectively**, **critically** and **responsibly**, citing verified passages and flagging gaps in evidence.
 
 Built for Cambridge EduX 2026 (Challenge 01) and Reply Student Tech Clash, **AI on Campus · Track A**.
+
+![AI Literacy Check homepage introducing the Humanities and Science tasks](docs/images/assessment-home.jpg)
 
 ## The activity
 
@@ -15,12 +17,25 @@ Built for Cambridge EduX 2026 (Challenge 01) and Reply Student Tech Clash, **AI 
 
 The science pack contains two built-in judgement points. The region with the highest single reading is not the most dependable on ordinary days, and the windmill test reports voltage, which cannot establish power or annual energy.
 
+<details>
+<summary>View the Humanities and Science workspaces</summary>
+
+**Humanities.** The student revises an independent draft alongside the AI discussion.
+
+![Humanities revision workspace with the essay editor and an AI reply](docs/images/assessment-humanities.jpg)
+
+**Science.** The student opens the wind evidence and writes a site recommendation.
+
+![Science workspace with the field notebook, site recommendation and AI discussion](docs/images/assessment-science.jpg)
+
+</details>
+
 ## How assessment works
 
 Two AI roles are kept separate.
 
 - **Collaborator** (`src/lib/assessment-personas.ts`) helps during the tasks. It offers suggestions and alternative views, leaves decisions to the student, does not reveal the rubric and does not remind students to fact-check unprompted.
-- **Assessor** runs once after both tasks. It receives the student's drafts, both numbered transcripts, the rubric and **reference facts** computed by the server from the wind data. The collaborator never sees these facts.
+- **Assessor** reviews the submitted work after both tasks. It receives the student's drafts, both numbered transcripts, the rubric and **reference facts** computed by the server from the wind data. The collaborator never sees these facts.
 
 Scoring then runs in three layers. The model identifies evidence, the server verifies it, and fixed rules produce the levels.
 
@@ -40,6 +55,10 @@ The server checks up to four candidates per task and dimension and keeps up to t
 | Bonus · Managing AI | Giving the AI a specific requirement, context or correction |
 
 The provisional score maps Great, Fair and Need Work to 100, 60 and 20. It averages the core dimensions that have evidence and needs at least two. A Bonus at Great adds 5 points, up to 100. **This scale is provisional and pending academic calibration.**
+
+The report below was generated from a synthetic submission. Expand a dimension to see task scores, supporting quotations and practical feedback.
+
+![Example Results page showing the provisional score and an expanded evidence breakdown](docs/images/assessment-results.jpg)
 
 Coverage is labelled **Verified Evidence Items**, with the number of tasks represented. It does not count distinct behaviours or independent assessment opportunities. A single item is flagged. Different non-overlapping quotations can describe one decision; automatic passage deduplication cannot resolve this reliably. The deterministic task rubric uses the set of outcomes, not the number of times an outcome appears, so repeated praise does not increase its weight. Contradictory evidence can change a task level. Great + Fair = 80, Fair + Need Work = 40, Great + Need Work = 60; no evidence = null. The mappings, bonus, cap and minimum coverage live in `provisionalScheme` for later calibration.
 
