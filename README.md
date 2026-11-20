@@ -26,7 +26,9 @@ Scoring then runs in three layers. The model identifies evidence, the server ver
 
 1. **Evidence identification** (`src/app/api/assessment/[id]/feedback/route.ts`). The assessor returns structured items in a JSON schema. Each item gives a task, an exact quotation, its source, an outcome (`met`, `partial`, `missed` or `insufficient`), a reason and a next step. It never returns points.
 2. **Server verification** (`src/lib/assessment-evidence.ts`). An item is kept only if its quotation appears verbatim in the cited source. Effective must cite the final submission. A Critical essay item must pair a revised passage with the matching first-draft passage. A Responsible item must link to a complete earlier AI statement and name the material checked. The server also confirms who started the check. One student action supports only one process dimension.
-3. **Levels and score** (`src/lib/assessment-scoring.ts`). Each task gets its own level: Great, Fair, Need Work or Not enough evidence. Two task levels are averaged and rounded down. Missing evidence in one task never lowers the other. A Responsible check counts as Great only when the student started it.
+3. **Levels and score** (`src/lib/assessment-scoring.ts`). Each task gets its own level: Great, Fair, Need Work or Not enough evidence. A dimension's points are the average of its task points, without rounding, so Great with Fair gives 80 and is shown as Fair–Great. Missing evidence in one task never lowers the other. A Responsible check counts as Great only when the student started it.
+
+The server checks up to four candidates per task and dimension and keeps the first two that pass, so a rejected candidate never displaces a valid one.
 
 | Dimension | Evidence it looks for |
 | --- | --- |
@@ -36,6 +38,8 @@ Scoring then runs in three layers. The model identifies evidence, the server ver
 | Bonus · Managing AI | Giving the AI a specific requirement, context or correction |
 
 The provisional score maps Great, Fair and Need Work to 100, 60 and 20. It averages the core dimensions that have evidence and needs at least two. A Bonus at Great adds 5 points, up to 100. **This scale is provisional and pending academic calibration.** A dimension whose level rests on one verified item is marked **Single observation**. It still counts towards the score, but one observation cannot show a consistent pattern.
+
+Each core dimension also shows its **evidence strength**, which does not change the score. Each verified item counts as one attempt: met = 1, partly met = 0.5, not met = 0. With s successes in n attempts, the Jeffreys posterior Beta(s + 0.5, n − s + 0.5) gives an estimated rate and a 90% interval (`src/lib/beta.ts`). An interval wider than 0.6 is marked wide. With at most four items per dimension, most intervals are wide, and the report says so.
 
 Saved reports are cached, so the same work always shows the same feedback. Reports saved under earlier rules can be re-scored from the report page.
 
@@ -62,7 +66,7 @@ Run `npm test` and `npm run typecheck` to check a change.
 | --- | --- |
 | `src/app/page.tsx`, `src/app/assessment/[id]/` | Landing page, two-task workspace, chat and report (`Factors.tsx`) |
 | `src/app/api/assessment/` | Create an activity, chat and submit (`[id]/route.ts`), generate feedback (`[id]/feedback/route.ts`) |
-| `src/lib/assessment-*.ts` | Personas, evidence schema and verification, scoring rules |
+| `src/lib/assessment-*.ts`, `src/lib/beta.ts` | Personas, evidence schema and verification, scoring rules, Beta intervals |
 | `src/lib/science-materials.ts`, `src/lib/wind-log.ts`, `src/lib/wind-pack.json`, `public/wind/` | Science materials and the reference facts computed from them |
 | `src/lib/store.ts` | SQLite storage with version checks, so two tabs cannot overwrite each other |
 | `docs/`, `supporting paper/` | Design notes and literature |

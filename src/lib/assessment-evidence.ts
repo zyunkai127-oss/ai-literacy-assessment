@@ -80,6 +80,10 @@ function isText(value: unknown, max: number): value is string {
   return typeof value === 'string' && !!value.trim() && value.length <= max;
 }
 
+/** Candidates checked per task and dimension, and verified items kept from them. */
+const maxCandidates = 4;
+const maxAccepted = 2;
+
 export function validateEvidence(data: Assessment, raw: unknown): EvidenceFeedback {
   if (!isRecord(raw)) throw Error('Invalid rubric results');
   const sources = evidenceSources(data);
@@ -94,11 +98,13 @@ export function validateEvidence(data: Assessment, raw: unknown): EvidenceFeedba
     if (!Array.isArray(rows)) throw Error('Invalid dimension results');
     const items: EvidenceItem[] = [];
     for (const task of tasks) {
-      const candidates = rows.filter(row => isRecord(row) && row.task === task).slice(0, 2);
+      // Validate before limiting: a rejected candidate must not displace a valid one behind it.
+      const candidates = rows.filter(row => isRecord(row) && row.task === task).slice(0, maxCandidates);
       const isEssayComparison = dimension === 'critical' && task === 'essay';
       const accepted: EvidenceItem[] = [];
       let gap: EvidenceItem | undefined;
       for (const row of candidates) {
+        if (accepted.length === maxAccepted) break;
         const { outcome, reason, improvement } = row;
         const quote = row.quote === '' ? null : row.quote;
         const sourceId = row.sourceId === '' ? null : row.sourceId;
